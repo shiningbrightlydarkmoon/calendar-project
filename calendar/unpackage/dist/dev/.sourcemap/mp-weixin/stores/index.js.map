@@ -1,0 +1,1 @@
+{"version":3,"file":"index.js","sources":["stores/index.js"],"sourcesContent":["import { createPinia } from 'pinia'\n\nconst pinia = createPinia()\n\nexport default pinia\n\n// 导出所有store\nexport * from './calendar.js'"],"names":["createPinia"],"mappings":";;;AAEK,MAAC,QAAQA,cAAW,YAAA;;"}

@@ -1,15 +1,25 @@
 {
-  "hash": "ee0f8230",
+  "hash": "fcc58803",
   "configHash": "875da607",
-  "lockfileHash": "d4022a1b",
-  "browserHash": "d09e3f5c",
+  "lockfileHash": "ecf2efe7",
+  "browserHash": "4e6f1548",
   "optimized": {
+    "lunar-javascript": {
+      "src": "../../../../../node_modules/lunar-javascript/index.js",
+      "file": "lunar-javascript.js",
+      "fileHash": "af1581fd",
+      "needsInterop": true
+    },
     "moment": {
       "src": "../../../../../node_modules/moment/dist/moment.js",
       "file": "moment.js",
-      "fileHash": "0c2bacdf",
+      "fileHash": "c3679a2b",
       "needsInterop": false
     }
   },
-  "chunks": {}
+  "chunks": {
+    "chunk-TDUMLE5V": {
+      "file": "chunk-TDUMLE5V.js"
+    }
+  }
 }

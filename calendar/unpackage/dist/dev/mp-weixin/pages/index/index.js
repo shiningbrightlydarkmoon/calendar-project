@@ -264,18 +264,18 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         o: common_vendor.f(common_vendor.unref(calendarStore).monthDays, (day, index, i0) => {
           return {
             a: common_vendor.t(day.day),
-            b: common_vendor.f(common_vendor.unref(calendarStore).getTimeEventsForDay(day.date), (event, k1, i1) => {
+            b: common_vendor.t(day.lunarDay),
+            c: common_vendor.f(common_vendor.unref(calendarStore).getTimeEventsForDay(day.date).slice(0, 3), (event, k1, i1) => {
               return {
                 a: event._id,
-                b: event.color,
-                c: common_vendor.o(($event) => handleViewEvent(event), event._id)
+                b: event.color
               };
             }),
-            c: index,
-            d: !day.isCurrentMonth ? 1 : "",
-            e: day.isToday ? 1 : "",
-            f: day.isSelected ? 1 : "",
-            g: common_vendor.o(($event) => common_vendor.unref(calendarStore).selectDate(day.date), index)
+            d: index,
+            e: !day.isCurrentMonth ? 1 : "",
+            f: day.isToday ? 1 : "",
+            g: day.isSelected ? 1 : "",
+            h: common_vendor.o(($event) => common_vendor.unref(calendarStore).selectDate(day.date), index)
           };
         })
       } : {}, {

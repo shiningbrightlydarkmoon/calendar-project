@@ -66,23 +66,23 @@
           <view 
             v-for="(day, index) in calendarStore.monthDays" 
             :key="index"
-            class="month-day"
+            class="calendar-day"
             :class="{
-              'other-month': !day.isCurrentMonth,
+              'not-current-month': !day.isCurrentMonth,
               'today': day.isToday,
               'selected': day.isSelected
             }"
             @click="calendarStore.selectDate(day.date)"
           >
             <text class="day-number">{{ day.day }}</text>
-            <view class="events-preview">
-              <view 
-                v-for="event in calendarStore.getTimeEventsForDay(day.date)" 
-                :key="event._id"
-                class="event-preview"
-                :style="{ backgroundColor: event.color }"
-                @click.stop="handleViewEvent(event)"
-              ></view>
+			<text class="lunar-day">{{ day.lunarDay }}</text>
+            <view class="event-dots">
+                <view 
+                  v-for="event in calendarStore.getTimeEventsForDay(day.date).slice(0, 3)"
+                  :key="event._id"
+                  class="event-dot"
+                  :style="{ backgroundColor: event.color }"
+                ></view>
             </view>
           </view>
         </view>
@@ -607,6 +607,39 @@ onMounted(() => {
   border-bottom: 1rpx solid #e4e7ed;
   flex-wrap: wrap;
   gap: 15rpx;
+}
+
+/* 修改 .calendar-day 让它支持纵向排列数字和农历 */
+.calendar-day {
+  height: 100rpx;
+  display: flex;
+  flex-direction: column; /* 纵向排列 */
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-bottom: 1rpx solid #f2f2f2;
+}
+
+.day-number {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+/* [新增] 农历样式 */
+.lunar-day {
+  font-size: 20rpx;
+  color: #999;
+  margin-top: 4rpx;
+}
+
+/* 选中状态下，农历文字也要变白 */
+.selected .lunar-day {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 今天状态下的颜色 */
+.today .lunar-day {
+  color: #2979ff;
 }
 
 .view-switcher {

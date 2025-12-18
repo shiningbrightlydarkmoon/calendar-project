@@ -36,6 +36,38 @@
   flex-wrap: wrap;
   gap: 15rpx;
 }
+
+/* 修改 .calendar-day 让它支持纵向排列数字和农历 */
+.calendar-day.data-v-1cf27b2a {
+  height: 100rpx;
+  display: flex;
+  flex-direction: column; /* 纵向排列 */
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-bottom: 1rpx solid #f2f2f2;
+}
+.day-number.data-v-1cf27b2a {
+  font-size: 28rpx;
+  font-weight: bold;
+}
+
+/* [新增] 农历样式 */
+.lunar-day.data-v-1cf27b2a {
+  font-size: 20rpx;
+  color: #999;
+  margin-top: 4rpx;
+}
+
+/* 选中状态下，农历文字也要变白 */
+.selected .lunar-day.data-v-1cf27b2a {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* 今天状态下的颜色 */
+.today .lunar-day.data-v-1cf27b2a {
+  color: #2979ff;
+}
 .view-switcher.data-v-1cf27b2a {
   display: flex;
   gap: 10rpx;

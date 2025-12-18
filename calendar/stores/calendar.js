@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import moment from 'moment'
+import { Solar } from 'lunar-javascript'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // 状态
@@ -70,26 +71,30 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   })
 
-  const monthDays = computed(() => {
-    const startOfMonth = selectedDate.value.clone().startOf('month')
-    const endOfMonth = selectedDate.value.clone().endOf('month')
-    const startDate = startOfMonth.clone().startOf('week')
-    const endDate = endOfMonth.clone().endOf('week')
-    
+const monthDays = computed(() => {
+    const startDay = selectedDate.value.clone().startOf('month').startOf('week')
+    const endDay = selectedDate.value.clone().endOf('month').endOf('week')
     const days = []
-    let currentDate = startDate.clone()
+    let day = startDay.clone()
     
-    while (currentDate.isBefore(endDate) || currentDate.isSame(endDate)) {
+    while (day.isBefore(endDay, 'day') || day.isSame(endDay, 'day')) {
+      // 农历计算逻辑
+      const solar = Solar.fromYmd(day.year(), day.month() + 1, day.date())
+      const lunar = solar.getLunar()
+      let lunarText = lunar.getDayInChinese()
+      if (lunar.getDay() === 1) lunarText = lunar.getMonthInChinese() + '月'
+      const festival = lunar.getFestivals()[0] || lunar.getOtherFestivals()[0]
+
       days.push({
-        date: currentDate.clone(),
-        day: currentDate.date(),
-        isCurrentMonth: currentDate.month() === selectedDate.value.month(),
-        isToday: currentDate.isSame(moment(), 'day'),
-        isSelected: currentDate.isSame(selectedDate.value, 'day')
+        date: day.clone(),
+        day: day.date(),
+        lunarDay: festival || lunarText, // 农历或节日
+        isCurrentMonth: day.isSame(selectedDate.value, 'month'),
+        isToday: day.isSame(moment(), 'day'),
+        isSelected: day.isSame(selectedDate.value, 'day')
       })
-      currentDate = currentDate.add(1, 'day')
+      day.add(1, 'day')
     }
-    
     return days
   })
 

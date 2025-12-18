@@ -49,21 +49,27 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
     }
   });
   const monthDays = common_vendor.computed(() => {
-    const startOfMonth = selectedDate.value.clone().startOf("month");
-    const endOfMonth = selectedDate.value.clone().endOf("month");
-    const startDate = startOfMonth.clone().startOf("week");
-    const endDate = endOfMonth.clone().endOf("week");
+    const startDay = selectedDate.value.clone().startOf("month").startOf("week");
+    const endDay = selectedDate.value.clone().endOf("month").endOf("week");
     const days = [];
-    let currentDate = startDate.clone();
-    while (currentDate.isBefore(endDate) || currentDate.isSame(endDate)) {
+    let day = startDay.clone();
+    while (day.isBefore(endDay, "day") || day.isSame(endDay, "day")) {
+      const solar = common_vendor.lunarJavascript.Solar.fromYmd(day.year(), day.month() + 1, day.date());
+      const lunar = solar.getLunar();
+      let lunarText = lunar.getDayInChinese();
+      if (lunar.getDay() === 1)
+        lunarText = lunar.getMonthInChinese() + "月";
+      const festival = lunar.getFestivals()[0] || lunar.getOtherFestivals()[0];
       days.push({
-        date: currentDate.clone(),
-        day: currentDate.date(),
-        isCurrentMonth: currentDate.month() === selectedDate.value.month(),
-        isToday: currentDate.isSame(common_vendor.hooks(), "day"),
-        isSelected: currentDate.isSame(selectedDate.value, "day")
+        date: day.clone(),
+        day: day.date(),
+        lunarDay: festival || lunarText,
+        // 农历或节日
+        isCurrentMonth: day.isSame(selectedDate.value, "month"),
+        isToday: day.isSame(common_vendor.hooks(), "day"),
+        isSelected: day.isSame(selectedDate.value, "day")
       });
-      currentDate = currentDate.add(1, "day");
+      day.add(1, "day");
     }
     return days;
   });
@@ -188,7 +194,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
     } catch (error) {
       debugLog.push(`❌ 调试过程中出错: ${error.message}`);
     }
-    common_vendor.index.__f__("log", "at stores/calendar.js:272", debugLog.join("\n"));
+    common_vendor.index.__f__("log", "at stores/calendar.js:277", debugLog.join("\n"));
     debugInfo.value = debugLog.join("\n");
     return debugLog;
   };
@@ -279,9 +285,9 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
       loading.value = true;
       const baseURL = getBaseURL();
       const url = baseURL + "/api/events?userId=default-user";
-      common_vendor.index.__f__("log", "at stores/calendar.js:381", "🌐 请求日程数据:", url);
-      common_vendor.index.__f__("log", "at stores/calendar.js:382", "📋 请求头:", getRequestHeaders());
-      common_vendor.index.__f__("log", "at stores/calendar.js:383", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
+      common_vendor.index.__f__("log", "at stores/calendar.js:386", "🌐 请求日程数据:", url);
+      common_vendor.index.__f__("log", "at stores/calendar.js:387", "📋 请求头:", getRequestHeaders());
+      common_vendor.index.__f__("log", "at stores/calendar.js:388", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
       const response = await new Promise((resolve, reject) => {
         common_vendor.index.request({
           url,
@@ -298,8 +304,8 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
       }
       const { statusCode, responseData } = handleUniResponse(response);
-      common_vendor.index.__f__("log", "at stores/calendar.js:404", "📡 响应状态:", statusCode);
-      common_vendor.index.__f__("log", "at stores/calendar.js:405", "📦 响应数据:", responseData);
+      common_vendor.index.__f__("log", "at stores/calendar.js:409", "📡 响应状态:", statusCode);
+      common_vendor.index.__f__("log", "at stores/calendar.js:410", "📦 响应数据:", responseData);
       if (statusCode === 200) {
         if (Array.isArray(responseData)) {
           events.value = responseData;
@@ -308,15 +314,15 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         } else if (responseData && Array.isArray(responseData.events)) {
           events.value = responseData.events;
         } else {
-          common_vendor.index.__f__("warn", "at stores/calendar.js:416", "⚠️ 无法识别的数据格式");
+          common_vendor.index.__f__("warn", "at stores/calendar.js:421", "⚠️ 无法识别的数据格式");
           events.value = [];
         }
-        common_vendor.index.__f__("log", "at stores/calendar.js:420", `✅ 成功加载 ${events.value.length} 个日程`);
+        common_vendor.index.__f__("log", "at stores/calendar.js:425", `✅ 成功加载 ${events.value.length} 个日程`);
       } else {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:425", "❌ 加载事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:430", "❌ 加载事件失败:", error);
       common_vendor.index.showToast({
         title: "加载失败: " + error.message,
         icon: "none",
@@ -358,7 +364,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:470", "❌ 创建事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:475", "❌ 创建事件失败:", error);
       throw error;
     }
   };
@@ -390,7 +396,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:505", "❌ 更新事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:510", "❌ 更新事件失败:", error);
       throw error;
     }
   };
@@ -420,7 +426,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:538", "❌ 删除事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:543", "❌ 删除事件失败:", error);
       throw error;
     }
   };

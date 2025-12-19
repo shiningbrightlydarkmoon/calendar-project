@@ -209,7 +209,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
     } catch (error) {
       debugLog.push(`❌ 调试过程中出错: ${error.message}`);
     }
-    common_vendor.index.__f__("log", "at stores/calendar.js:309", debugLog.join("\n"));
+    common_vendor.index.__f__("log", "at stores/calendar.js:312", debugLog.join("\n"));
     debugInfo.value = debugLog.join("\n");
     return debugLog;
   };
@@ -300,9 +300,9 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
       loading.value = true;
       const baseURL = getBaseURL();
       const url = baseURL + "/api/events?userId=default-user";
-      common_vendor.index.__f__("log", "at stores/calendar.js:418", "🌐 请求日程数据:", url);
-      common_vendor.index.__f__("log", "at stores/calendar.js:419", "📋 请求头:", getRequestHeaders());
-      common_vendor.index.__f__("log", "at stores/calendar.js:420", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
+      common_vendor.index.__f__("log", "at stores/calendar.js:421", "🌐 请求日程数据:", url);
+      common_vendor.index.__f__("log", "at stores/calendar.js:422", "📋 请求头:", getRequestHeaders());
+      common_vendor.index.__f__("log", "at stores/calendar.js:423", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
       const response = await new Promise((resolve, reject) => {
         common_vendor.index.request({
           url,
@@ -319,8 +319,8 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
       }
       const { statusCode, responseData } = handleUniResponse(response);
-      common_vendor.index.__f__("log", "at stores/calendar.js:441", "📡 响应状态:", statusCode);
-      common_vendor.index.__f__("log", "at stores/calendar.js:442", "📦 响应数据:", responseData);
+      common_vendor.index.__f__("log", "at stores/calendar.js:444", "📡 响应状态:", statusCode);
+      common_vendor.index.__f__("log", "at stores/calendar.js:445", "📦 响应数据:", responseData);
       if (statusCode === 200) {
         if (Array.isArray(responseData)) {
           events.value = responseData;
@@ -329,15 +329,15 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         } else if (responseData && Array.isArray(responseData.events)) {
           events.value = responseData.events;
         } else {
-          common_vendor.index.__f__("warn", "at stores/calendar.js:453", "⚠️ 无法识别的数据格式");
+          common_vendor.index.__f__("warn", "at stores/calendar.js:456", "⚠️ 无法识别的数据格式");
           events.value = [];
         }
-        common_vendor.index.__f__("log", "at stores/calendar.js:457", `✅ 成功加载 ${events.value.length} 个日程`);
+        common_vendor.index.__f__("log", "at stores/calendar.js:460", `✅ 成功加载 ${events.value.length} 个日程`);
       } else {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:462", "❌ 加载事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:465", "❌ 加载事件失败:", error);
       common_vendor.index.showToast({
         title: "加载失败: " + error.message,
         icon: "none",
@@ -379,7 +379,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:507", "❌ 创建事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:510", "❌ 创建事件失败:", error);
       throw error;
     }
   };
@@ -411,7 +411,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:542", "❌ 更新事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:545", "❌ 更新事件失败:", error);
       throw error;
     }
   };
@@ -441,7 +441,7 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
         throw new Error(`HTTP错误: ${statusCode}`);
       }
     } catch (error) {
-      common_vendor.index.__f__("error", "at stores/calendar.js:575", "❌ 删除事件失败:", error);
+      common_vendor.index.__f__("error", "at stores/calendar.js:578", "❌ 删除事件失败:", error);
       throw error;
     }
   };

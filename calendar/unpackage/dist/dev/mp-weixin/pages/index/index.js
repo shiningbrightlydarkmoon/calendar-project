@@ -64,7 +64,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       });
     };
     const getEventsForTimeSlot = (date, time) => {
-      return calendarStore.getEventsForDayAndTime(date, time);
+      return calendarStore.getEventsForTimeSlot(date, time);
     };
     const handleDateChange = (field, value) => {
       eventForm[field] = value;
@@ -167,7 +167,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         }
         closeEventModal();
       } catch (error) {
-        common_vendor.index.__f__("error", "at pages/index/index.vue:512", "保存日程失败:", error);
+        common_vendor.index.__f__("error", "at pages/index/index.vue:513", "保存日程失败:", error);
         common_vendor.index.showToast({
           title: error.message || "保存失败，请重试",
           icon: "none"
@@ -190,7 +190,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
               });
               closeEventModal();
             } catch (error) {
-              common_vendor.index.__f__("error", "at pages/index/index.vue:536", "删除日程失败:", error);
+              common_vendor.index.__f__("error", "at pages/index/index.vue:537", "删除日程失败:", error);
               common_vendor.index.showToast({
                 title: error.message || "删除失败，请重试",
                 icon: "none"
@@ -215,13 +215,13 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       }
     });
     common_vendor.onMounted(() => {
-      common_vendor.index.__f__("log", "at pages/index/index.vue:565", "🚀 日历应用启动");
+      common_vendor.index.__f__("log", "at pages/index/index.vue:566", "🚀 日历应用启动");
       setTimeout(() => {
         calendarStore.debugSystem().then(() => {
-          common_vendor.index.__f__("log", "at pages/index/index.vue:570", "🎯 系统调试完成，开始加载日程数据");
+          common_vendor.index.__f__("log", "at pages/index/index.vue:571", "🎯 系统调试完成，开始加载日程数据");
           calendarStore.loadEvents();
         }).catch((error) => {
-          common_vendor.index.__f__("error", "at pages/index/index.vue:574", "❌ 系统调试失败:", error);
+          common_vendor.index.__f__("error", "at pages/index/index.vue:575", "❌ 系统调试失败:", error);
           calendarStore.loadEvents();
         });
       }, 1e3);
@@ -329,7 +329,8 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             c: common_vendor.t(event.endDate),
             d: event._id,
             e: event.color + "20",
-            f: "8rpx solid " + event.color
+            f: "8rpx solid " + event.color,
+            g: common_vendor.o(($event) => handleViewEvent(event), event._id)
           };
         })
       } : {}, {

@@ -170,9 +170,10 @@
 		          :key="event._id"
 		          class="long-event-item"
 		          :style="{ backgroundColor: event.color + '20', borderLeft: '8rpx solid ' + event.color }"
+		          @click.stop="handleViewEvent(event)" 
 		        >
 		          <text class="long-event-title">{{ event.title }}</text>
-		          <text class="long-event-time">({{ event.startDate }} 至 {{ event.endDate }})</text>
+		          <text class="long-event-time">{{ event.startDate }} 至 {{ event.endDate }}</text>
 		        </view>
 		      </view>
 		  </view>
@@ -393,7 +394,7 @@ const handleViewMoreEvents = (date: any, time: string) => {
 
 // 日视图方法 - 简化版本
 const getEventsForTimeSlot = (date: any, time: string) => {
-  return calendarStore.getEventsForDayAndTime(date, time)
+  return calendarStore.getEventsForTimeSlot(date, time)
 }
 
 // 通用方法
@@ -1025,21 +1026,22 @@ onMounted(() => {
 
 .all-day-header {
   background-color: #f8f9fa;
-  border-bottom: 1rpx solid #eeeeee;
+  border-bottom: 1rpx solid #e4e7ed;
   display: flex;
-  padding: 15rpx 0;
+  padding: 0;
   min-height: 80rpx;
 }
 
 .all-day-label {
   font-size: 22rpx;
   color: #909399;
-  width: 120rpx; 
+  width: 120rpx;
   display: flex;
   align-items: center;
-  justify-content: center; 
+  justify-content: center;
   flex-shrink: 0; 
-  border-right: 1rpx solid #e4e7ed; 
+  border-right: 1rpx solid #e4e7ed;
+  background-color: #f8f9fa;
 }
 
 .all-day-list {
@@ -1047,7 +1049,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8rpx;
-  padding: 0 15rpx;
+  padding: 10rpx 15rpx;
+  background-color: #fff;
 }
 
 .long-event-item {
@@ -1055,7 +1058,7 @@ onMounted(() => {
   border-radius: 4rpx;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 2rpx 4rpx rgba(0,0,0,0.05);
+  box-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.05);
 }
 
 .long-event-title {

@@ -193,31 +193,34 @@ const monthDays = computed(() => {
    * 获取某天的“长日程”（全天或跨多天）
    */
   const getLongEventsForDay = (date) => {
-    const dateStr = date.format('YYYY-MM-DD')
+    const dateStr = date.format('YYYY-MM-DD');
     return events.value.filter(event => {
-      const isMultiDay = event.startDate !== event.endDate// 跨天
-      const isAllDay = event.isAllDay === true // 全天标记
-      // 判断该日程是否覆盖了这一天
-      const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate
+      const isMultiDay = event.startDate !== event.endDate; // 跨天
+      const isAllDay = event.isAllDay === true; // 全天标记
+      const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate; // 覆盖当天
       
-      return (isMultiDay || isAllDay) && isWithinRange
-    })
-  }
+      return (isMultiDay || isAllDay) && isWithinRange;
+    });
+  };
   
   /**
    * 获取某天的“短日程”（非全天且不跨天，按小时排列）
    * 修改你原有的 getEventsForTimeSlot，排除掉跨天日程
    */
   const getEventsForTimeSlot = (date, time) => {
-    const dateStr = date.format('YYYY-MM-DD')
+    const dateStr = date.format('YYYY-MM-DD');
     return events.value.filter(event => {
-      const isSingleDay = event.startDate === event.endDate
-      const isNotAllDay = !event.isAllDay
-      const timeMatch = time >= event.startTime && time < event.endTime
+      // 关键：排除跨天日程
+      const isSingleDay = event.startDate === event.endDate; // 开始和结束是同一天
+      const isNotAllDay = !event.isAllDay; // 非全天
       
-      return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch
-    })
-  }
+      // 匹配具体的小时格
+      const timeMatch = time >= event.startTime && time < event.endTime;
+      
+      // 必须同时满足：单天、非全天、日期匹配、时间匹配
+      return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch;
+    });
+  };
   
   
 

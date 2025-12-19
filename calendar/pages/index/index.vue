@@ -74,15 +74,19 @@
             }"
             @click="calendarStore.selectDate(day.date)"
           >
-            <text class="day-number">{{ day.day }}</text>
-			<text class="lunar-day">{{ day.lunarDay }}</text>
+            <view class="day-content-wrapper">
+              <text class="day-number">{{ day.day }}</text>
+            </view>
+            
+            <text class="lunar-day">{{ day.lunarDay }}</text>
+            
             <view class="event-dots">
-                <view 
-                  v-for="event in calendarStore.getTimeEventsForDay(day.date).slice(0, 3)"
-                  :key="event._id"
-                  class="event-dot"
-                  :style="{ backgroundColor: event.color }"
-                ></view>
+              <view 
+                v-for="event in calendarStore.getTimeEventsForDay(day.date).slice(0, 3)"
+                :key="event._id"
+                class="event-dot"
+                :style="{ backgroundColor: event.color }"
+              ></view>
             </view>
           </view>
         </view>
@@ -611,7 +615,7 @@ onMounted(() => {
 
 /* 修改 .calendar-day 让它支持纵向排列数字和农历 */
 .calendar-day {
-  height: 100rpx;
+  height: 120rpx;
   display: flex;
   flex-direction: column; /* 纵向排列 */
   align-items: center;
@@ -620,26 +624,57 @@ onMounted(() => {
   border-bottom: 1rpx solid #f2f2f2;
 }
 
+.day-content-wrapper {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.today .day-content-wrapper {
+  background-color: #2979ff; 
+}
+
+.today .day-number {
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.selected:not(.today) .day-content-wrapper {
+  border: 2rpx solid #2979ff;
+}
+
 .day-number {
   font-size: 28rpx;
   font-weight: bold;
 }
 
-/* [新增] 农历样式 */
+
 .lunar-day {
   font-size: 20rpx;
   color: #999;
   margin-top: 4rpx;
 }
 
-/* 选中状态下，农历文字也要变白 */
-.selected .lunar-day {
-  color: rgba(255, 255, 255, 0.8);
-}
-
 /* 今天状态下的颜色 */
 .today .lunar-day {
   color: #2979ff;
+}
+
+.event-dots {
+  display: flex;
+  justify-content: center;
+  gap: 4rpx;
+  margin-top: 6rpx;
+}
+
+.event-dot {
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
 }
 
 .view-switcher {

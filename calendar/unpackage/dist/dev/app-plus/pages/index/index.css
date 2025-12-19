@@ -36,6 +36,61 @@
   flex-wrap: wrap;
   gap: 0.46875rem;
 }
+
+/* 修改 .calendar-day 让它支持纵向排列数字和农历 */
+.calendar-day[data-v-1cf27b2a] {
+  height: 3.75rem;
+  display: flex;
+  flex-direction: column; /* 纵向排列 */
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-bottom: 0.03125rem solid #f2f2f2;
+}
+.day-content-wrapper[data-v-1cf27b2a] {
+  width: 1.875rem;
+  height: 1.875rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+.today .day-content-wrapper[data-v-1cf27b2a] {
+  background-color: #2979ff;
+}
+.today .day-number[data-v-1cf27b2a] {
+  color: #ffffff;
+  font-weight: bold;
+}
+.selected:not(.today) .day-content-wrapper[data-v-1cf27b2a] {
+  border: 0.0625rem solid #2979ff;
+}
+.day-number[data-v-1cf27b2a] {
+  font-size: 0.875rem;
+  font-weight: bold;
+}
+.lunar-day[data-v-1cf27b2a] {
+  font-size: 0.625rem;
+  color: #999;
+  margin-top: 0.125rem;
+}
+
+/* 今天状态下的颜色 */
+.today .lunar-day[data-v-1cf27b2a] {
+  color: #2979ff;
+}
+.event-dots[data-v-1cf27b2a] {
+  display: flex;
+  justify-content: center;
+  gap: 0.125rem;
+  margin-top: 0.1875rem;
+}
+.event-dot[data-v-1cf27b2a] {
+  width: 0.25rem;
+  height: 0.25rem;
+  border-radius: 50%;
+}
 .view-switcher[data-v-1cf27b2a] {
   display: flex;
   gap: 0.3125rem;

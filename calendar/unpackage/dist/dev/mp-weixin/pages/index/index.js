@@ -167,7 +167,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         }
         closeEventModal();
       } catch (error) {
-        common_vendor.index.__f__("error", "at pages/index/index.vue:494", "保存日程失败:", error);
+        common_vendor.index.__f__("error", "at pages/index/index.vue:498", "保存日程失败:", error);
         common_vendor.index.showToast({
           title: error.message || "保存失败，请重试",
           icon: "none"
@@ -190,7 +190,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
               });
               closeEventModal();
             } catch (error) {
-              common_vendor.index.__f__("error", "at pages/index/index.vue:518", "删除日程失败:", error);
+              common_vendor.index.__f__("error", "at pages/index/index.vue:522", "删除日程失败:", error);
               common_vendor.index.showToast({
                 title: error.message || "删除失败，请重试",
                 icon: "none"
@@ -215,13 +215,13 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       }
     });
     common_vendor.onMounted(() => {
-      common_vendor.index.__f__("log", "at pages/index/index.vue:547", "🚀 日历应用启动");
+      common_vendor.index.__f__("log", "at pages/index/index.vue:551", "🚀 日历应用启动");
       setTimeout(() => {
         calendarStore.debugSystem().then(() => {
-          common_vendor.index.__f__("log", "at pages/index/index.vue:552", "🎯 系统调试完成，开始加载日程数据");
+          common_vendor.index.__f__("log", "at pages/index/index.vue:556", "🎯 系统调试完成，开始加载日程数据");
           calendarStore.loadEvents();
         }).catch((error) => {
-          common_vendor.index.__f__("error", "at pages/index/index.vue:556", "❌ 系统调试失败:", error);
+          common_vendor.index.__f__("error", "at pages/index/index.vue:560", "❌ 系统调试失败:", error);
           calendarStore.loadEvents();
         });
       }, 1e3);

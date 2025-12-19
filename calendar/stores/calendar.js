@@ -156,9 +156,9 @@ const monthDays = computed(() => {
 
   const selectDate = (date) => {
     selectedDate.value = date.clone()
-    if (currentView.value === 'month') {
-      currentView.value = 'day'
-    }
+    // if (currentView.value === 'month') {
+    //   currentView.value = 'day'
+    // }
     loadEvents()
   }
 

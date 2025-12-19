@@ -123,9 +123,6 @@ const useCalendarStore = common_vendor.defineStore("calendar", () => {
   };
   const selectDate = (date) => {
     selectedDate.value = date.clone();
-    if (currentView.value === "month") {
-      currentView.value = "day";
-    }
     loadEvents();
   };
   const getTimeEventsForDay = (date) => {

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import moment from 'moment'
 import { Solar } from 'lunar-javascript'
+import reminderService from '@/utils/reminder.js'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // 状态
@@ -495,6 +496,12 @@ const monthDays = computed(() => {
       })
       
       const { statusCode, responseData } = handleUniResponse(response)
+	  
+	  const result = await responseData.Date || responseData
+	  
+	  await reminderService.createLocalNotification(result)
+	  
+	  return result
       
       if (statusCode === 200 || statusCode === 201) {
         if (responseData) {
@@ -530,6 +537,11 @@ const monthDays = computed(() => {
       })
       
       const { statusCode, responseData } = handleUniResponse(response)
+	  
+	  reminderService.cancelNotification(eventId)
+	  await reminderService.createLocalNotification({ ...eventData, _id: eventId })
+	  
+	  await loadEvents()
       
       if (statusCode === 200) {
         if (responseData) {
@@ -564,6 +576,8 @@ const monthDays = computed(() => {
       })
       
       const { statusCode, responseData } = handleUniResponse(response)
+	  
+	  reminderService.cancelNotification(eventId)
       
       if (statusCode === 200) {
         if (responseData) {

@@ -1,19 +1,19 @@
 {
-  "hash": "fcc58803",
+  "hash": "b30bf337",
   "configHash": "875da607",
-  "lockfileHash": "ecf2efe7",
-  "browserHash": "4e6f1548",
+  "lockfileHash": "de208473",
+  "browserHash": "a8726006",
   "optimized": {
     "lunar-javascript": {
       "src": "../../../../../node_modules/lunar-javascript/index.js",
       "file": "lunar-javascript.js",
-      "fileHash": "af1581fd",
+      "fileHash": "01b0907c",
       "needsInterop": true
     },
     "moment": {
       "src": "../../../../../node_modules/moment/dist/moment.js",
       "file": "moment.js",
-      "fileHash": "c3679a2b",
+      "fileHash": "d7ce0dbd",
       "needsInterop": false
     }
   },

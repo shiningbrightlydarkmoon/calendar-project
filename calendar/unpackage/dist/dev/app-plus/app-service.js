@@ -17333,6 +17333,24 @@ This will fail in production.`);
         return false;
       });
     };
+    const getLongEventsForDay = (date) => {
+      const dateStr = date.format("YYYY-MM-DD");
+      return events.value.filter((event) => {
+        const isMultiDay = event.startDate !== event.endDate;
+        const isAllDay = event.isAllDay === true;
+        const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate;
+        return (isMultiDay || isAllDay) && isWithinRange;
+      });
+    };
+    const getEventsForTimeSlot = (date, time) => {
+      const dateStr = date.format("YYYY-MM-DD");
+      return events.value.filter((event) => {
+        const isSingleDay = event.startDate === event.endDate;
+        const isNotAllDay = !event.isAllDay;
+        const timeMatch = time >= event.startTime && time < event.endTime;
+        return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch;
+      });
+    };
     const handleUniResponse = (response) => {
       let statusCode, responseData;
       statusCode = response.statusCode;
@@ -17380,7 +17398,7 @@ This will fail in production.`);
       } catch (error) {
         debugLog.push(`❌ 调试过程中出错: ${error.message}`);
       }
-      formatAppLog("log", "at stores/calendar.js:277", debugLog.join("\n"));
+      formatAppLog("log", "at stores/calendar.js:309", debugLog.join("\n"));
       debugInfo.value = debugLog.join("\n");
       return debugLog;
     };
@@ -17471,9 +17489,9 @@ This will fail in production.`);
         loading.value = true;
         const baseURL = getBaseURL();
         const url = baseURL + "/api/events?userId=default-user";
-        formatAppLog("log", "at stores/calendar.js:386", "🌐 请求日程数据:", url);
-        formatAppLog("log", "at stores/calendar.js:387", "📋 请求头:", getRequestHeaders());
-        formatAppLog("log", "at stores/calendar.js:388", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
+        formatAppLog("log", "at stores/calendar.js:418", "🌐 请求日程数据:", url);
+        formatAppLog("log", "at stores/calendar.js:419", "📋 请求头:", getRequestHeaders());
+        formatAppLog("log", "at stores/calendar.js:420", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
         const response = await new Promise((resolve, reject) => {
           uni.request({
             url,
@@ -17490,8 +17508,8 @@ This will fail in production.`);
           throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
         }
         const { statusCode, responseData } = handleUniResponse(response);
-        formatAppLog("log", "at stores/calendar.js:409", "📡 响应状态:", statusCode);
-        formatAppLog("log", "at stores/calendar.js:410", "📦 响应数据:", responseData);
+        formatAppLog("log", "at stores/calendar.js:441", "📡 响应状态:", statusCode);
+        formatAppLog("log", "at stores/calendar.js:442", "📦 响应数据:", responseData);
         if (statusCode === 200) {
           if (Array.isArray(responseData)) {
             events.value = responseData;
@@ -17500,15 +17518,15 @@ This will fail in production.`);
           } else if (responseData && Array.isArray(responseData.events)) {
             events.value = responseData.events;
           } else {
-            formatAppLog("warn", "at stores/calendar.js:421", "⚠️ 无法识别的数据格式");
+            formatAppLog("warn", "at stores/calendar.js:453", "⚠️ 无法识别的数据格式");
             events.value = [];
           }
-          formatAppLog("log", "at stores/calendar.js:425", `✅ 成功加载 ${events.value.length} 个日程`);
+          formatAppLog("log", "at stores/calendar.js:457", `✅ 成功加载 ${events.value.length} 个日程`);
         } else {
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:430", "❌ 加载事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:462", "❌ 加载事件失败:", error);
         uni.showToast({
           title: "加载失败: " + error.message,
           icon: "none",
@@ -17550,7 +17568,7 @@ This will fail in production.`);
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:475", "❌ 创建事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:507", "❌ 创建事件失败:", error);
         throw error;
       }
     };
@@ -17582,7 +17600,7 @@ This will fail in production.`);
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:510", "❌ 更新事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:542", "❌ 更新事件失败:", error);
         throw error;
       }
     };
@@ -17612,7 +17630,7 @@ This will fail in production.`);
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:543", "❌ 删除事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:575", "❌ 删除事件失败:", error);
         throw error;
       }
     };
@@ -17637,6 +17655,8 @@ This will fail in production.`);
       selectDate,
       getTimeEventsForDay,
       getEventsForDayAndTime,
+      getLongEventsForDay,
+      getEventsForTimeSlot,
       loadEvents,
       createEvent,
       updateEvent,
@@ -17818,7 +17838,7 @@ This will fail in production.`);
           }
           closeEventModal();
         } catch (error) {
-          formatAppLog("error", "at pages/index/index.vue:498", "保存日程失败:", error);
+          formatAppLog("error", "at pages/index/index.vue:512", "保存日程失败:", error);
           uni.showToast({
             title: error.message || "保存失败，请重试",
             icon: "none"
@@ -17841,7 +17861,7 @@ This will fail in production.`);
                 });
                 closeEventModal();
               } catch (error) {
-                formatAppLog("error", "at pages/index/index.vue:522", "删除日程失败:", error);
+                formatAppLog("error", "at pages/index/index.vue:536", "删除日程失败:", error);
                 uni.showToast({
                   title: error.message || "删除失败，请重试",
                   icon: "none"
@@ -17866,13 +17886,13 @@ This will fail in production.`);
         }
       });
       vue.onMounted(() => {
-        formatAppLog("log", "at pages/index/index.vue:551", "🚀 日历应用启动");
+        formatAppLog("log", "at pages/index/index.vue:565", "🚀 日历应用启动");
         setTimeout(() => {
           calendarStore.debugSystem().then(() => {
-            formatAppLog("log", "at pages/index/index.vue:556", "🎯 系统调试完成，开始加载日程数据");
+            formatAppLog("log", "at pages/index/index.vue:570", "🎯 系统调试完成，开始加载日程数据");
             calendarStore.loadEvents();
           }).catch((error) => {
-            formatAppLog("error", "at pages/index/index.vue:560", "❌ 系统调试失败:", error);
+            formatAppLog("error", "at pages/index/index.vue:574", "❌ 系统调试失败:", error);
             calendarStore.loadEvents();
           });
         }, 1e3);
@@ -18208,6 +18228,48 @@ This will fail in production.`);
             )
           ]),
           vue.createElementVNode("view", { class: "day-time-grid" }, [
+            $setup.calendarStore.getLongEventsForDay($setup.calendarStore.selectedDate).length > 0 ? (vue.openBlock(), vue.createElementBlock("view", {
+              key: 0,
+              class: "all-day-header"
+            }, [
+              vue.createElementVNode("view", { class: "all-day-label" }, "全天/跨天"),
+              vue.createElementVNode("view", { class: "all-day-list" }, [
+                (vue.openBlock(true), vue.createElementBlock(
+                  vue.Fragment,
+                  null,
+                  vue.renderList($setup.calendarStore.getLongEventsForDay($setup.calendarStore.selectedDate), (event) => {
+                    return vue.openBlock(), vue.createElementBlock(
+                      "view",
+                      {
+                        key: event._id,
+                        class: "long-event-item",
+                        style: vue.normalizeStyle({ backgroundColor: event.color + "20", borderLeft: "8rpx solid " + event.color })
+                      },
+                      [
+                        vue.createElementVNode(
+                          "text",
+                          { class: "long-event-title" },
+                          vue.toDisplayString(event.title),
+                          1
+                          /* TEXT */
+                        ),
+                        vue.createElementVNode(
+                          "text",
+                          { class: "long-event-time" },
+                          "(" + vue.toDisplayString(event.startDate) + " 至 " + vue.toDisplayString(event.endDate) + ")",
+                          1
+                          /* TEXT */
+                        )
+                      ],
+                      4
+                      /* STYLE */
+                    );
+                  }),
+                  128
+                  /* KEYED_FRAGMENT */
+                ))
+              ])
+            ])) : vue.createCommentVNode("v-if", true),
             (vue.openBlock(true), vue.createElementBlock(
               vue.Fragment,
               null,

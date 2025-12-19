@@ -162,6 +162,20 @@
         </view>
         
         <view class="day-time-grid">
+		  <view class="all-day-header" v-if="calendarStore.getLongEventsForDay(calendarStore.selectedDate).length > 0">
+		      <view class="all-day-label">全天/跨天</view>
+		      <view class="all-day-list">
+		        <view 
+		          v-for="event in calendarStore.getLongEventsForDay(calendarStore.selectedDate)" 
+		          :key="event._id"
+		          class="long-event-item"
+		          :style="{ backgroundColor: event.color + '20', borderLeft: '8rpx solid ' + event.color }"
+		        >
+		          <text class="long-event-title">{{ event.title }}</text>
+		          <text class="long-event-time">({{ event.startDate }} 至 {{ event.endDate }})</text>
+		        </view>
+		      </view>
+		  </view>
           <view 
             v-for="time in timeSlots" 
             :key="time"
@@ -1007,6 +1021,60 @@ onMounted(() => {
   display: block;
   font-size: 28rpx;
   color: #606266;
+}
+
+.all-day-header {
+  background-color: #f8f9fa;
+  border-bottom: 1rpx solid #eeeeee;
+  display: flex;
+  padding: 15rpx 0;
+  min-height: 80rpx;
+}
+
+.all-day-label {
+  font-size: 22rpx;
+  color: #909399;
+  width: 120rpx; 
+  display: flex;
+  align-items: center;
+  justify-content: center; 
+  flex-shrink: 0; 
+  border-right: 1rpx solid #e4e7ed; 
+}
+
+.all-day-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 0 15rpx;
+}
+
+.long-event-item {
+  padding: 10rpx 16rpx;
+  border-radius: 4rpx;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2rpx 4rpx rgba(0,0,0,0.05);
+}
+
+.long-event-title {
+  font-size: 26rpx;
+  font-weight: bold;
+  color: #303133;
+  line-height: 1.4;
+}
+
+.long-event-time {
+  font-size: 20rpx;
+  color: #606266;
+  margin-top: 4rpx;
+}
+
+/* 调整下方滚动区域高度，确保布局不崩 */
+.day-scroll {
+  flex: 1;
+  height: 0; /* 配合 flex:1 填充剩余空间 */
 }
 
 .day-time-grid {

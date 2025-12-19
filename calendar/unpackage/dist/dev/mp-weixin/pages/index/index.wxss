@@ -381,6 +381,54 @@
   font-size: 28rpx;
   color: #606266;
 }
+.all-day-header.data-v-1cf27b2a {
+  background-color: #f8f9fa;
+  border-bottom: 1rpx solid #eeeeee;
+  display: flex;
+  padding: 15rpx 0;
+  min-height: 80rpx;
+}
+.all-day-label.data-v-1cf27b2a {
+  font-size: 22rpx;
+  color: #909399;
+  width: 120rpx; 
+  display: flex;
+  align-items: center;
+  justify-content: center; 
+  flex-shrink: 0; 
+  border-right: 1rpx solid #e4e7ed;
+}
+.all-day-list.data-v-1cf27b2a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  padding: 0 15rpx;
+}
+.long-event-item.data-v-1cf27b2a {
+  padding: 10rpx 16rpx;
+  border-radius: 4rpx;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2rpx 4rpx rgba(0,0,0,0.05);
+}
+.long-event-title.data-v-1cf27b2a {
+  font-size: 26rpx;
+  font-weight: bold;
+  color: #303133;
+  line-height: 1.4;
+}
+.long-event-time.data-v-1cf27b2a {
+  font-size: 20rpx;
+  color: #606266;
+  margin-top: 4rpx;
+}
+
+/* 调整下方滚动区域高度，确保布局不崩 */
+.day-scroll.data-v-1cf27b2a {
+  flex: 1;
+  height: 0; /* 配合 flex:1 填充剩余空间 */
+}
 .day-time-grid.data-v-1cf27b2a {
   flex: 1;
   overflow-y: auto;

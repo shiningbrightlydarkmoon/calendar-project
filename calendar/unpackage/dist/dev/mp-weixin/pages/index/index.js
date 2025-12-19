@@ -167,7 +167,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         }
         closeEventModal();
       } catch (error) {
-        common_vendor.index.__f__("error", "at pages/index/index.vue:498", "保存日程失败:", error);
+        common_vendor.index.__f__("error", "at pages/index/index.vue:512", "保存日程失败:", error);
         common_vendor.index.showToast({
           title: error.message || "保存失败，请重试",
           icon: "none"
@@ -190,7 +190,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
               });
               closeEventModal();
             } catch (error) {
-              common_vendor.index.__f__("error", "at pages/index/index.vue:522", "删除日程失败:", error);
+              common_vendor.index.__f__("error", "at pages/index/index.vue:536", "删除日程失败:", error);
               common_vendor.index.showToast({
                 title: error.message || "删除失败，请重试",
                 icon: "none"
@@ -215,13 +215,13 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       }
     });
     common_vendor.onMounted(() => {
-      common_vendor.index.__f__("log", "at pages/index/index.vue:551", "🚀 日历应用启动");
+      common_vendor.index.__f__("log", "at pages/index/index.vue:565", "🚀 日历应用启动");
       setTimeout(() => {
         calendarStore.debugSystem().then(() => {
-          common_vendor.index.__f__("log", "at pages/index/index.vue:556", "🎯 系统调试完成，开始加载日程数据");
+          common_vendor.index.__f__("log", "at pages/index/index.vue:570", "🎯 系统调试完成，开始加载日程数据");
           calendarStore.loadEvents();
         }).catch((error) => {
-          common_vendor.index.__f__("error", "at pages/index/index.vue:560", "❌ 系统调试失败:", error);
+          common_vendor.index.__f__("error", "at pages/index/index.vue:574", "❌ 系统调试失败:", error);
           calendarStore.loadEvents();
         });
       }, 1e3);
@@ -317,10 +317,23 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         })
       } : {}, {
         t: common_vendor.unref(calendarStore).currentView === "day"
-      }, common_vendor.unref(calendarStore).currentView === "day" ? {
+      }, common_vendor.unref(calendarStore).currentView === "day" ? common_vendor.e({
         v: common_vendor.t(common_vendor.unref(calendarStore).selectedDate.format("YYYY年MM月DD日")),
         w: common_vendor.t(common_vendor.unref(calendarStore).selectedDate.format("dddd")),
-        x: common_vendor.f(common_vendor.unref(timeSlots), (time, k0, i0) => {
+        x: common_vendor.unref(calendarStore).getLongEventsForDay(common_vendor.unref(calendarStore).selectedDate).length > 0
+      }, common_vendor.unref(calendarStore).getLongEventsForDay(common_vendor.unref(calendarStore).selectedDate).length > 0 ? {
+        y: common_vendor.f(common_vendor.unref(calendarStore).getLongEventsForDay(common_vendor.unref(calendarStore).selectedDate), (event, k0, i0) => {
+          return {
+            a: common_vendor.t(event.title),
+            b: common_vendor.t(event.startDate),
+            c: common_vendor.t(event.endDate),
+            d: event._id,
+            e: event.color + "20",
+            f: "8rpx solid " + event.color
+          };
+        })
+      } : {}, {
+        z: common_vendor.f(common_vendor.unref(timeSlots), (time, k0, i0) => {
           return {
             a: common_vendor.t(time),
             b: common_vendor.f(getEventsForTimeSlot(common_vendor.unref(calendarStore).selectedDate, time), (event, k1, i1) => {
@@ -337,27 +350,27 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             d: time
           };
         })
-      } : {}, {
-        y: showEventModal.value
+      }) : {}, {
+        A: showEventModal.value
       }, showEventModal.value ? common_vendor.e({
-        z: common_vendor.t(isEditing.value ? "编辑日程" : "添加日程"),
-        A: common_vendor.o(closeEventModal),
-        B: autoFocusTitle.value,
-        C: eventForm.title,
-        D: common_vendor.o(($event) => eventForm.title = $event.detail.value),
-        E: common_vendor.t(eventForm.startDate || "选择日期"),
-        F: eventForm.startDate,
-        G: common_vendor.o((e) => handleDateChange("startDate", e.detail.value)),
-        H: common_vendor.t(eventForm.startTime || "选择时间"),
-        I: eventForm.startTime,
-        J: common_vendor.o((e) => handleTimeChange("startTime", e.detail.value)),
-        K: common_vendor.t(eventForm.endDate || "选择日期"),
-        L: eventForm.endDate,
-        M: common_vendor.o((e) => handleDateChange("endDate", e.detail.value)),
-        N: common_vendor.t(eventForm.endTime || "选择时间"),
-        O: eventForm.endTime,
-        P: common_vendor.o((e) => handleTimeChange("endTime", e.detail.value)),
-        Q: common_vendor.f(common_vendor.unref(calendarStore).colorOptions, (color, k0, i0) => {
+        B: common_vendor.t(isEditing.value ? "编辑日程" : "添加日程"),
+        C: common_vendor.o(closeEventModal),
+        D: autoFocusTitle.value,
+        E: eventForm.title,
+        F: common_vendor.o(($event) => eventForm.title = $event.detail.value),
+        G: common_vendor.t(eventForm.startDate || "选择日期"),
+        H: eventForm.startDate,
+        I: common_vendor.o((e) => handleDateChange("startDate", e.detail.value)),
+        J: common_vendor.t(eventForm.startTime || "选择时间"),
+        K: eventForm.startTime,
+        L: common_vendor.o((e) => handleTimeChange("startTime", e.detail.value)),
+        M: common_vendor.t(eventForm.endDate || "选择日期"),
+        N: eventForm.endDate,
+        O: common_vendor.o((e) => handleDateChange("endDate", e.detail.value)),
+        P: common_vendor.t(eventForm.endTime || "选择时间"),
+        Q: eventForm.endTime,
+        R: common_vendor.o((e) => handleTimeChange("endTime", e.detail.value)),
+        S: common_vendor.f(common_vendor.unref(calendarStore).colorOptions, (color, k0, i0) => {
           return {
             a: color,
             b: color,
@@ -365,16 +378,16 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             d: common_vendor.o(($event) => eventForm.color = color, color)
           };
         }),
-        R: eventForm.notes,
-        S: common_vendor.o(($event) => eventForm.notes = $event.detail.value),
-        T: common_vendor.o(closeEventModal),
-        U: isEditing.value
+        T: eventForm.notes,
+        U: common_vendor.o(($event) => eventForm.notes = $event.detail.value),
+        V: common_vendor.o(closeEventModal),
+        W: isEditing.value
       }, isEditing.value ? {
-        V: common_vendor.o(handleDeleteEvent)
+        X: common_vendor.o(handleDeleteEvent)
       } : {}, {
-        W: common_vendor.o(handleSaveEvent)
+        Y: common_vendor.o(handleSaveEvent)
       }) : {}, {
-        X: common_vendor.unref(calendarStore).loading
+        Z: common_vendor.unref(calendarStore).loading
       }, common_vendor.unref(calendarStore).loading ? {} : {});
     };
   }

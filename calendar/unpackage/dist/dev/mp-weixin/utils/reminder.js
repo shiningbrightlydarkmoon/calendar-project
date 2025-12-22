@@ -4,68 +4,63 @@ class ReminderService {
   constructor() {
     this.initialized = false;
   }
-  // 初始化提醒服务
+  /**
+   * 初始化提醒服务
+   * 在 App.vue 的 onLaunch 中调用，确保申请到系统通知权限
+   */
   async init() {
     if (this.initialized)
       return;
-    try {
-      this.initialized = true;
-    } catch (error) {
-      common_vendor.index.__f__("error", "at utils/reminder.js:23", "❌ 提醒服务初始化失败:", error);
-    }
+    this.initialized = true;
   }
-  // 创建本地通知
-  createLocalNotification(event) {
-    return new Promise((resolve, reject) => {
-    });
-  }
-  // H5环境下的通知
-  async createH5Notification(event) {
-    if (!("Notification" in window)) {
-      throw new Error("浏览器不支持通知功能");
-    }
-    if (Notification.permission === "default") {
-      await Notification.requestPermission();
-    }
-    if (Notification.permission === "granted") {
-      const reminderTime = this.calculateReminderTime(event) - Date.now();
-      if (reminderTime > 0) {
-        setTimeout(() => {
-          const notification = new Notification("日程提醒", {
-            body: `${event.title} 即将开始`,
-            icon: "/static/logo.png",
-            tag: event._id
-          });
-          notification.onclick = function() {
-            window.focus();
-            notification.close();
-          };
-        }, reminderTime);
+  /**
+   * 创建本地通知
+   * @param {Object} rawEvent - 日程数据（自动兼容包含 data 字段的对象）
+   */
+  createLocalNotification(rawEvent) {
+    return new Promise((resolve) => {
+      const event = rawEvent && rawEvent.data ? rawEvent.data : rawEvent;
+      if (!event || !event.title || !event.startDate) {
+        common_vendor.index.__f__("warn", "at utils/reminder.js:43", "⚠️ [Reminder] 数据不完整，忽略提醒设置:", {
+          receivedData: event,
+          hasTitle: !!(event == null ? void 0 : event.title),
+          hasStartDate: !!(event == null ? void 0 : event.startDate)
+        });
+        return resolve();
       }
+      resolve();
+    });
+  }
+  /**
+   * 计算提醒时间：默认提前 15 分钟
+   */
+  calculateReminderTime(event) {
+    try {
+      const dateStr = event.startDate.replace(/-/g, "/");
+      const timeStr = event.startTime || "00:00";
+      const startDateTime = /* @__PURE__ */ new Date(`${dateStr} ${timeStr}`);
+      const advanceMS = 15 * 60 * 1e3;
+      return startDateTime.getTime() - advanceMS;
+    } catch (e) {
+      common_vendor.index.__f__("error", "at utils/reminder.js:115", "❌ [Reminder] 时间解析出错:", e);
+      return Date.now() + 5e3;
     }
   }
-  // 计算提醒时间
-  calculateReminderTime(event) {
-    const startDateTime = /* @__PURE__ */ new Date(`${event.startDate} ${event.startTime || "00:00"}`);
-    const reminderMinutes = event.reminders && event.reminders.length > 0 ? event.reminders[0] : 15;
-    return startDateTime.getTime() - reminderMinutes * 60 * 1e3;
+  /**
+   * 清除所有本地通知记录
+   */
+  cancelNotification() {
   }
-  // 取消通知
-  cancelNotification(eventId) {
-  }
-  // 检查并设置提醒
-  async scheduleEventReminders(events) {
-    await this.init();
-    const now = Date.now();
-    const futureEvents = events.filter((event) => {
-      const eventTime = (/* @__PURE__ */ new Date(`${event.startDate} ${event.startTime || "00:00"}`)).getTime();
-      return eventTime > now && !event.hasReminded;
-    });
-    for (const event of futureEvents) {
-      try {
-        await this.createLocalNotification(event);
-      } catch (error) {
-        common_vendor.index.__f__("error", "at utils/reminder.js:132", "❌ 设置提醒失败:", event.title, error);
+  /**
+   * H5 浏览器通知实现
+   */
+  async createH5Notification(event, reminderTime) {
+    if ("Notification" in window && Notification.permission === "granted") {
+      const delay = reminderTime - Date.now();
+      if (delay > 0) {
+        setTimeout(() => {
+          new Notification("日程提醒", { body: event.title });
+        }, delay);
       }
     }
   }

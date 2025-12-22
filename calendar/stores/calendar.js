@@ -419,9 +419,9 @@ const monthDays = computed(() => {
       const baseURL = getBaseURL()
       const url = baseURL + '/api/events?userId=default-user'
       
-      console.log('🌐 请求日程数据:', url)
-      console.log('📋 请求头:', getRequestHeaders())
-      console.log('🌍 当前环境:', isNgrokEnvironment() ? 'Ngrok' : '本地')
+      console.log('请求日程数据:', url)
+      console.log('请求头:', getRequestHeaders())
+      console.log('当前环境:', isNgrokEnvironment() ? 'Ngrok' : '本地')
       
       const response = await new Promise((resolve, reject) => {
         uni.request({
@@ -442,8 +442,8 @@ const monthDays = computed(() => {
       
       const { statusCode, responseData } = handleUniResponse(response)
       
-      console.log('📡 响应状态:', statusCode)
-      console.log('📦 响应数据:', responseData)
+      console.log('响应状态:', statusCode)
+      console.log('响应数据:', responseData)
       
       if (statusCode === 200) {
         // 简化的数据解析
@@ -454,16 +454,16 @@ const monthDays = computed(() => {
         } else if (responseData && Array.isArray(responseData.events)) {
           events.value = responseData.events
         } else {
-          console.warn('⚠️ 无法识别的数据格式')
+          console.warn('无法识别的数据格式')
           events.value = []
         }
         
-        console.log(`✅ 成功加载 ${events.value.length} 个日程`)
+        console.log(`成功加载 ${events.value.length} 个日程`)
       } else {
         throw new Error(`HTTP错误: ${statusCode}`)
       }
     } catch (error) {
-      console.error('❌ 加载事件失败:', error)
+      console.error('加载事件失败:', error)
       uni.showToast({
         title: '加载失败: ' + error.message,
         icon: 'none',
@@ -476,49 +476,55 @@ const monthDays = computed(() => {
   }
 
   const createEvent = async (eventData) => {
-    try {
-      const baseURL = getBaseURL()
-      const url = baseURL + '/api/events'
-      
-      const response = await new Promise((resolve, reject) => {
-        uni.request({
-          url,
-          method: 'POST',
-          data: {
-            ...eventData,
-            userId: 'default-user'
-          },
-          header: getRequestHeaders(), // 使用动态头部
-          timeout: 10000,
-          success: (res) => resolve(res),
-          fail: (err) => reject(err)
+      try {
+        const baseURL = getBaseURL()
+        const url = baseURL + '/api/events'
+        
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: 'POST',
+            data: {
+              ...eventData,
+              userId: 'default-user'
+            },
+            header: getRequestHeaders(), // 使用动态头部
+            timeout: 10000,
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          })
         })
-      })
-      
-      const { statusCode, responseData } = handleUniResponse(response)
-	  
-	  const result = await responseData.Date || responseData
-	  
-	  await reminderService.createLocalNotification(result)
-	  
-	  return result
-      
-      if (statusCode === 200 || statusCode === 201) {
-        if (responseData) {
+        
+        const { statusCode, responseData } = handleUniResponse(response)
+        
+        // 检查状态码是否表示成功
+        if (statusCode === 200 || statusCode === 201) {
+          if (!responseData) {
+            throw new Error('创建日程失败: 响应数据为空')
+          }
+  
+          // 核心修复：正确提取后端返回的数据字段（应为 data 而非 Date）
+          const result = responseData.data || responseData
+          
+          // 1. 先异步加载/刷新日程列表，确保 UI 同步
           await loadEvents()
-          return responseData.data || responseData
+          
+          // 2. 核心修复：非阻塞方式调用提醒服务（移除 await）
+          // 这样可以防止 App 端因权限申请弹窗阻塞导致创建弹窗不消失
+          reminderService.createLocalNotification(result).catch(e => {
+            console.error('提醒设置失败，但不影响 UI:', e)
+          })
+          
+          // 3. 正常返回结果给调用者（index.vue），触发 closeEventModal()
+          return result
         } else {
-          throw new Error('创建日程失败: 响应数据为空')
+          throw new Error(`HTTP错误: ${statusCode}`)
         }
-      } else {
-        throw new Error(`HTTP错误: ${statusCode}`)
+      } catch (error) {
+        console.error('创建事件失败:', error)
+        throw error
       }
-    } catch (error) {
-      console.error('❌ 创建事件失败:', error)
-      throw error
     }
-  }
-
   const updateEvent = async (eventId, eventData) => {
     try {
       const baseURL = getBaseURL()
@@ -554,7 +560,7 @@ const monthDays = computed(() => {
         throw new Error(`HTTP错误: ${statusCode}`)
       }
     } catch (error) {
-      console.error('❌ 更新事件失败:', error)
+      console.error('更新事件失败:', error)
       throw error
     }
   }
@@ -589,7 +595,7 @@ const monthDays = computed(() => {
         throw new Error(`HTTP错误: ${statusCode}`)
       }
     } catch (error) {
-      console.error('❌ 删除事件失败:', error)
+      console.error('删除事件失败:', error)
       throw error
     }
   }

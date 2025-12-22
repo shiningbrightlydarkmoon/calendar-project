@@ -17194,94 +17194,101 @@ This will fail in production.`);
     constructor() {
       this.initialized = false;
     }
-    // 初始化提醒服务
+    /**
+     * 初始化提醒服务
+     * 在 App.vue 的 onLaunch 中调用，确保申请到系统通知权限
+     */
     async init() {
       if (this.initialized)
         return;
       try {
-        const result = await plus.push.requestPermission();
-        if (result) {
-          formatAppLog("log", "at utils/reminder.js:15", "✅ 通知权限申请成功");
-        } else {
-          formatAppLog("warn", "at utils/reminder.js:17", "⚠️ 通知权限申请失败");
-        }
-        this.initialized = true;
+        plus.push.requestPermission((res) => {
+          formatAppLog("log", "at utils/reminder.js:19", "🔔 [System] 通知权限状态:", res);
+          this.initialized = true;
+        });
       } catch (error) {
-        formatAppLog("error", "at utils/reminder.js:23", "❌ 提醒服务初始化失败:", error);
+        formatAppLog("error", "at utils/reminder.js:23", "❌ 提醒服务权限初始化失败:", error);
       }
     }
-    // 创建本地通知
-    createLocalNotification(event) {
-      return new Promise((resolve, reject) => {
-        if (!plus.push) {
-          reject(new Error("推送功能不可用"));
-          return;
+    /**
+     * 创建本地通知
+     * @param {Object} rawEvent - 日程数据（自动兼容包含 data 字段的对象）
+     */
+    createLocalNotification(rawEvent) {
+      return new Promise((resolve) => {
+        const event = rawEvent && rawEvent.data ? rawEvent.data : rawEvent;
+        if (!event || !event.title || !event.startDate) {
+          formatAppLog("warn", "at utils/reminder.js:43", "⚠️ [Reminder] 数据不完整，忽略提醒设置:", {
+            receivedData: event,
+            hasTitle: !!(event == null ? void 0 : event.title),
+            hasStartDate: !!(event == null ? void 0 : event.startDate)
+          });
+          return resolve();
         }
+        if (!plus.push)
+          return resolve();
+        const reminderTime = this.calculateReminderTime(event);
+        const now2 = Date.now();
+        const delay = reminderTime - now2;
+        const content = String(event.title);
+        const payload = JSON.stringify({ id: event._id, type: "calendar_event" });
         const options = {
           title: "日程提醒",
-          content: `${event.title} 即将开始`,
           cover: false,
           sound: "system",
-          icon: "/static/logo.png"
+          when: new Date(reminderTime)
+          // 系统级定时排期
         };
-        const reminderTime = this.calculateReminderTime(event);
-        if (reminderTime > Date.now()) {
-          options.when = reminderTime;
-        }
-        plus.push.createMessage(options.content, options.payload, options);
-        formatAppLog("log", "at utils/reminder.js:51", "📅 创建本地通知:", event.title, new Date(reminderTime));
-        resolve();
-      });
-    }
-    // H5环境下的通知
-    async createH5Notification(event) {
-      if (!("Notification" in window)) {
-        throw new Error("浏览器不支持通知功能");
-      }
-      if (Notification.permission === "default") {
-        await Notification.requestPermission();
-      }
-      if (Notification.permission === "granted") {
-        const reminderTime = this.calculateReminderTime(event) - Date.now();
-        if (reminderTime > 0) {
+        if (delay <= 0) {
+          plus.push.createMessage(content, payload, options);
+          formatAppLog("log", "at utils/reminder.js:74", "🚀 [Reminder] 立即触发通知:", content);
+        } else if (delay < 24 * 60 * 60 * 1e3) {
           setTimeout(() => {
-            const notification = new Notification("日程提醒", {
-              body: `${event.title} 即将开始`,
-              icon: "/static/logo.png",
-              tag: event._id
-            });
-            notification.onclick = function() {
-              window.focus();
-              notification.close();
-            };
-          }, reminderTime);
+            try {
+              plus.push.createMessage(content, payload, options);
+              formatAppLog("log", "at utils/reminder.js:80", "🚀 [Reminder] 到点触发:", content);
+            } catch (e) {
+              formatAppLog("error", "at utils/reminder.js:82", "❌ [Reminder] 推送失败:", e);
+            }
+          }, delay);
+          formatAppLog("log", "at utils/reminder.js:86", `✅ [Reminder] 提醒排期成功: "${content}"，预计于 ${new Date(reminderTime).toLocaleString()} 弹出`);
         }
+      });
+    }
+    /**
+     * 计算提醒时间：默认提前 15 分钟
+     */
+    calculateReminderTime(event) {
+      try {
+        const dateStr = event.startDate.replace(/-/g, "/");
+        const timeStr = event.startTime || "00:00";
+        const startDateTime = /* @__PURE__ */ new Date(`${dateStr} ${timeStr}`);
+        const advanceMS = 15 * 60 * 1e3;
+        return startDateTime.getTime() - advanceMS;
+      } catch (e) {
+        formatAppLog("error", "at utils/reminder.js:115", "❌ [Reminder] 时间解析出错:", e);
+        return Date.now() + 5e3;
       }
     }
-    // 计算提醒时间
-    calculateReminderTime(event) {
-      const startDateTime = /* @__PURE__ */ new Date(`${event.startDate} ${event.startTime || "00:00"}`);
-      const reminderMinutes = event.reminders && event.reminders.length > 0 ? event.reminders[0] : 15;
-      return startDateTime.getTime() - reminderMinutes * 60 * 1e3;
+    /**
+     * 清除所有本地通知记录
+     */
+    cancelNotification() {
+      if (typeof plus !== "undefined" && plus.push) {
+        plus.push.clear();
+        formatAppLog("log", "at utils/reminder.js:127", "🗑️ [Reminder] 本地通知栏已清空");
+      }
     }
-    // 取消通知
-    cancelNotification(eventId) {
-      plus.push.clear();
-      formatAppLog("log", "at utils/reminder.js:110", "🗑️ 清除通知:", eventId);
-    }
-    // 检查并设置提醒
-    async scheduleEventReminders(events) {
-      await this.init();
-      const now2 = Date.now();
-      const futureEvents = events.filter((event) => {
-        const eventTime = (/* @__PURE__ */ new Date(`${event.startDate} ${event.startTime || "00:00"}`)).getTime();
-        return eventTime > now2 && !event.hasReminded;
-      });
-      for (const event of futureEvents) {
-        try {
-          await this.createLocalNotification(event);
-        } catch (error) {
-          formatAppLog("error", "at utils/reminder.js:132", "❌ 设置提醒失败:", event.title, error);
+    /**
+     * H5 浏览器通知实现
+     */
+    async createH5Notification(event, reminderTime) {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const delay = reminderTime - Date.now();
+        if (delay > 0) {
+          setTimeout(() => {
+            new Notification("日程提醒", { body: event.title });
+          }, delay);
         }
       }
     }
@@ -17586,9 +17593,9 @@ This will fail in production.`);
         loading.value = true;
         const baseURL = getBaseURL();
         const url = baseURL + "/api/events?userId=default-user";
-        formatAppLog("log", "at stores/calendar.js:422", "🌐 请求日程数据:", url);
-        formatAppLog("log", "at stores/calendar.js:423", "📋 请求头:", getRequestHeaders());
-        formatAppLog("log", "at stores/calendar.js:424", "🌍 当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
+        formatAppLog("log", "at stores/calendar.js:422", "请求日程数据:", url);
+        formatAppLog("log", "at stores/calendar.js:423", "请求头:", getRequestHeaders());
+        formatAppLog("log", "at stores/calendar.js:424", "当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
         const response = await new Promise((resolve, reject) => {
           uni.request({
             url,
@@ -17605,8 +17612,8 @@ This will fail in production.`);
           throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
         }
         const { statusCode, responseData } = handleUniResponse(response);
-        formatAppLog("log", "at stores/calendar.js:445", "📡 响应状态:", statusCode);
-        formatAppLog("log", "at stores/calendar.js:446", "📦 响应数据:", responseData);
+        formatAppLog("log", "at stores/calendar.js:445", "响应状态:", statusCode);
+        formatAppLog("log", "at stores/calendar.js:446", "响应数据:", responseData);
         if (statusCode === 200) {
           if (Array.isArray(responseData)) {
             events.value = responseData;
@@ -17615,15 +17622,15 @@ This will fail in production.`);
           } else if (responseData && Array.isArray(responseData.events)) {
             events.value = responseData.events;
           } else {
-            formatAppLog("warn", "at stores/calendar.js:457", "⚠️ 无法识别的数据格式");
+            formatAppLog("warn", "at stores/calendar.js:457", "无法识别的数据格式");
             events.value = [];
           }
-          formatAppLog("log", "at stores/calendar.js:461", `✅ 成功加载 ${events.value.length} 个日程`);
+          formatAppLog("log", "at stores/calendar.js:461", `成功加载 ${events.value.length} 个日程`);
         } else {
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:466", "❌ 加载事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:466", "加载事件失败:", error);
         uni.showToast({
           title: "加载失败: " + error.message,
           icon: "none",
@@ -17654,21 +17661,21 @@ This will fail in production.`);
           });
         });
         const { statusCode, responseData } = handleUniResponse(response);
-        const result = await responseData.Date || responseData;
-        await reminderService.createLocalNotification(result);
-        return result;
         if (statusCode === 200 || statusCode === 201) {
-          if (responseData) {
-            await loadEvents();
-            return responseData.data || responseData;
-          } else {
+          if (!responseData) {
             throw new Error("创建日程失败: 响应数据为空");
           }
+          const result = responseData.data || responseData;
+          await loadEvents();
+          reminderService.createLocalNotification(result).catch((e) => {
+            formatAppLog("error", "at stores/calendar.js:515", "提醒设置失败，但不影响 UI:", e);
+          });
+          return result;
         } else {
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:517", "❌ 创建事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:524", "创建事件失败:", error);
         throw error;
       }
     };
@@ -17703,7 +17710,7 @@ This will fail in production.`);
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:557", "❌ 更新事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:563", "更新事件失败:", error);
         throw error;
       }
     };
@@ -17734,7 +17741,7 @@ This will fail in production.`);
           throw new Error(`HTTP错误: ${statusCode}`);
         }
       } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:592", "❌ 删除事件失败:", error);
+        formatAppLog("error", "at stores/calendar.js:598", "删除事件失败:", error);
         throw error;
       }
     };

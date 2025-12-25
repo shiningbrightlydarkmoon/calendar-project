@@ -17193,104 +17193,299 @@ This will fail in production.`);
   class ReminderService {
     constructor() {
       this.initialized = false;
+      this.notifications = /* @__PURE__ */ new Map();
     }
     /**
      * 初始化提醒服务
-     * 在 App.vue 的 onLaunch 中调用，确保申请到系统通知权限
      */
     async init() {
       if (this.initialized)
         return;
       try {
         plus.push.requestPermission((res) => {
-          formatAppLog("log", "at utils/reminder.js:19", "🔔 [System] 通知权限状态:", res);
+          formatAppLog("log", "at utils/reminder.js:18", "🔔 通知权限状态:", res);
           this.initialized = true;
+          this.cleanupOldNotifications();
         });
       } catch (error) {
-        formatAppLog("error", "at utils/reminder.js:23", "❌ 提醒服务权限初始化失败:", error);
+        formatAppLog("error", "at utils/reminder.js:25", "❌ 提醒服务权限初始化失败:", error);
       }
     }
     /**
-     * 创建本地通知
-     * @param {Object} rawEvent - 日程数据（自动兼容包含 data 字段的对象）
+     * 清理过期通知记录
+     */
+    cleanupOldNotifications() {
+      try {
+        const now2 = Date.now();
+        const oneDayAgo = now2 - 24 * 60 * 60 * 1e3;
+        for (const [id, notification] of this.notifications) {
+          if (notification.timestamp < oneDayAgo) {
+            this.notifications.delete(id);
+          }
+        }
+        formatAppLog("log", "at utils/reminder.js:49", "🧹 清理过期通知记录完成");
+      } catch (error) {
+        formatAppLog("error", "at utils/reminder.js:51", "清理通知失败:", error);
+      }
+    }
+    /**
+     * 创建本地通知（支持多个提醒时间）
      */
     createLocalNotification(rawEvent) {
       return new Promise((resolve) => {
         const event = rawEvent && rawEvent.data ? rawEvent.data : rawEvent;
         if (!event || !event.title || !event.startDate) {
-          formatAppLog("warn", "at utils/reminder.js:43", "⚠️ [Reminder] 数据不完整，忽略提醒设置:", {
-            receivedData: event,
-            hasTitle: !!(event == null ? void 0 : event.title),
-            hasStartDate: !!(event == null ? void 0 : event.startDate)
-          });
+          formatAppLog("warn", "at utils/reminder.js:65", "数据不完整，忽略提醒设置");
           return resolve();
         }
-        if (!plus.push)
+        const startTime = this.parseEventDateTime(event);
+        if (!startTime) {
+          formatAppLog("warn", "at utils/reminder.js:72", "无法解析日程时间");
           return resolve();
-        const reminderTime = this.calculateReminderTime(event);
+        }
         const now2 = Date.now();
+        if (startTime <= now2) {
+          formatAppLog("log", "at utils/reminder.js:80", "⏰ 过去日程，不设置提醒:", event.title);
+          return resolve();
+        }
+        let reminderMinutes = 15;
+        if (event.reminderMinutes !== void 0) {
+          reminderMinutes = event.reminderMinutes;
+        }
+        let reminderTime = startTime - reminderMinutes * 60 * 1e3;
+        const minReminderTime = now2 + 1e4;
+        if (reminderTime <= now2) {
+          reminderTime = Math.max(minReminderTime, now2 + 5e3);
+          formatAppLog("log", "at utils/reminder.js:100", `⏱️ 提醒时间已过，调整为立即提醒: "${event.title}"`);
+        }
+        if (!plus.push) {
+          formatAppLog("warn", "at utils/reminder.js:105", "plus.push 未初始化");
+          return resolve();
+        }
         const delay = reminderTime - now2;
-        const content = String(event.title);
-        const payload = JSON.stringify({ id: event._id, type: "calendar_event" });
+        const eventId = event._id || event.id || Date.now().toString();
+        const reminderId = `${eventId}_${reminderMinutes}`;
+        let content = event.title;
+        if (reminderMinutes > 0) {
+          if (reminderMinutes < 60) {
+            content = `[${reminderMinutes}分钟前] ${event.title}`;
+          } else if (reminderMinutes < 1440) {
+            const hours2 = Math.floor(reminderMinutes / 60);
+            content = `[${hours2}小时前] ${event.title}`;
+          } else if (reminderMinutes < 10080) {
+            const days2 = Math.floor(reminderMinutes / 1440);
+            content = `[${days2}天前] ${event.title}`;
+          } else {
+            const weeks2 = Math.floor(reminderMinutes / 10080);
+            content = `[${weeks2}周前] ${event.title}`;
+          }
+        } else {
+          content = `[准时] ${event.title}`;
+        }
+        const payload = JSON.stringify({
+          id: eventId,
+          reminderId,
+          type: "calendar_event",
+          title: event.title,
+          reminderMinutes,
+          startTime: new Date(startTime).toLocaleString()
+        });
         const options = {
-          title: "日程提醒",
+          title: reminderMinutes === 0 ? "日程开始" : "日程提醒",
           cover: false,
           sound: "system",
           when: new Date(reminderTime)
-          // 系统级定时排期
         };
-        if (delay <= 0) {
-          plus.push.createMessage(content, payload, options);
-          formatAppLog("log", "at utils/reminder.js:74", "🚀 [Reminder] 立即触发通知:", content);
-        } else if (delay < 24 * 60 * 60 * 1e3) {
+        try {
           setTimeout(() => {
             try {
               plus.push.createMessage(content, payload, options);
-              formatAppLog("log", "at utils/reminder.js:80", "🚀 [Reminder] 到点触发:", content);
+              const timeText2 = this.getReminderTimeText(reminderMinutes);
+              formatAppLog("log", "at utils/reminder.js:159", `🚀 触发${timeText2}提醒: "${event.title}"`);
+              this.notifications.delete(reminderId);
             } catch (e) {
-              formatAppLog("error", "at utils/reminder.js:82", "❌ [Reminder] 推送失败:", e);
+              formatAppLog("error", "at utils/reminder.js:164", "推送失败:", e);
             }
           }, delay);
-          formatAppLog("log", "at utils/reminder.js:86", `✅ [Reminder] 提醒排期成功: "${content}"，预计于 ${new Date(reminderTime).toLocaleString()} 弹出`);
+          this.notifications.set(reminderId, {
+            id: reminderId,
+            eventId,
+            title: event.title,
+            reminderMinutes,
+            startTime,
+            reminderTime,
+            timestamp: now2
+          });
+          const delaySeconds = Math.round(delay / 1e3);
+          const delayMinutes = Math.round(delaySeconds / 60);
+          const timeText = this.getReminderTimeText(reminderMinutes);
+          if (delaySeconds < 60) {
+            formatAppLog("log", "at utils/reminder.js:185", `✅ ${timeText}提醒排期成功: "${event.title}"，${delaySeconds}秒后触发`);
+          } else {
+            formatAppLog("log", "at utils/reminder.js:187", `✅ ${timeText}提醒排期成功: "${event.title}"，${delayMinutes}分钟后触发`);
+          }
+        } catch (error) {
+          formatAppLog("error", "at utils/reminder.js:191", "设置提醒失败:", error);
         }
+        resolve();
       });
     }
     /**
-     * 计算提醒时间：默认提前 15 分钟
+     * 获取提醒时间文本
      */
-    calculateReminderTime(event) {
+    getReminderTimeText(minutes2) {
+      if (minutes2 === 0)
+        return "准时";
+      if (minutes2 < 60)
+        return `${minutes2}分钟前`;
+      if (minutes2 < 1440)
+        return `${Math.floor(minutes2 / 60)}小时前`;
+      if (minutes2 < 10080)
+        return `${Math.floor(minutes2 / 1440)}天前`;
+      return `${Math.floor(minutes2 / 10080)}周前`;
+    }
+    /**
+     * 解析事件日期时间
+     */
+    parseEventDateTime(event) {
       try {
         const dateStr = event.startDate.replace(/-/g, "/");
+        if (event.isAllDay === true) {
+          return new Date(dateStr).getTime();
+        }
         const timeStr = event.startTime || "00:00";
-        const startDateTime = /* @__PURE__ */ new Date(`${dateStr} ${timeStr}`);
-        const advanceMS = 15 * 60 * 1e3;
-        return startDateTime.getTime() - advanceMS;
+        return (/* @__PURE__ */ new Date(`${dateStr} ${timeStr}`)).getTime();
       } catch (e) {
-        formatAppLog("error", "at utils/reminder.js:115", "❌ [Reminder] 时间解析出错:", e);
-        return Date.now() + 5e3;
+        formatAppLog("error", "at utils/reminder.js:233", "日期时间解析失败:", e);
+        return null;
       }
     }
     /**
-     * 清除所有本地通知记录
+     * 检查日程是否已经过去
      */
-    cancelNotification() {
+    isEventInPast(event) {
+      try {
+        const eventTime = this.parseEventDateTime(event);
+        if (!eventTime)
+          return true;
+        return eventTime <= Date.now();
+      } catch (e) {
+        formatAppLog("error", "at utils/reminder.js:248", "检查日程时间失败:", e);
+        return true;
+      }
+    }
+    /**
+     * 清除特定事件的所有提醒
+     */
+    cancelNotification(eventId = null) {
       if (typeof plus !== "undefined" && plus.push) {
-        plus.push.clear();
-        formatAppLog("log", "at utils/reminder.js:127", "🗑️ [Reminder] 本地通知栏已清空");
+        if (eventId) {
+          let count = 0;
+          for (const [id, notification] of this.notifications) {
+            if (notification.eventId === eventId) {
+              this.notifications.delete(id);
+              count++;
+            }
+          }
+          formatAppLog("log", "at utils/reminder.js:268", `🗑️ 取消事件 ${eventId} 的 ${count} 个提醒`);
+        }
+      }
+    }
+    /**
+     * 为事件设置多个提醒
+     */
+    async setupMultipleReminders(event, reminderMinutesArray) {
+      if (!reminderMinutesArray || !Array.isArray(reminderMinutesArray)) {
+        formatAppLog("warn", "at utils/reminder.js:279", "无效的提醒时间数组");
+        return;
+      }
+      const now2 = Date.now();
+      const startTime = this.parseEventDateTime(event);
+      if (!startTime || startTime <= now2) {
+        formatAppLog("log", "at utils/reminder.js:287", "⏰ 过去日程，不设置提醒");
+        return;
+      }
+      formatAppLog("log", "at utils/reminder.js:291", `📅 为日程 "${event.title}" 设置 ${reminderMinutesArray.length} 个提醒`);
+      for (const minutes2 of reminderMinutesArray) {
+        const reminderEvent = {
+          ...event,
+          reminderMinutes: minutes2
+        };
+        await this.createLocalNotification(reminderEvent);
       }
     }
     /**
      * H5 浏览器通知实现
      */
-    async createH5Notification(event, reminderTime) {
-      if ("Notification" in window && Notification.permission === "granted") {
-        const delay = reminderTime - Date.now();
-        if (delay > 0) {
-          setTimeout(() => {
-            new Notification("日程提醒", { body: event.title });
-          }, delay);
+    async createH5Notification(event, reminderTime, reminderMinutes) {
+      if ("Notification" in window) {
+        if (Notification.permission === "default") {
+          await Notification.requestPermission();
+        }
+        if (Notification.permission === "granted") {
+          const now2 = Date.now();
+          const delay = reminderTime - now2;
+          if (delay > 0) {
+            setTimeout(() => {
+              const timeText = this.getReminderTimeText(reminderMinutes);
+              new Notification(`${timeText}提醒`, {
+                body: `${event.title}
+开始时间: ${new Date(this.parseEventDateTime(event)).toLocaleString()}`,
+                icon: "/static/logo.png"
+              });
+              formatAppLog("log", "at utils/reminder.js:324", `🔔 触发${timeText}浏览器通知: ${event.title}`);
+            }, delay);
+          } else {
+            const timeText = this.getReminderTimeText(reminderMinutes);
+            new Notification(`${timeText}提醒`, {
+              body: `${event.title}
+开始时间: ${new Date(this.parseEventDateTime(event)).toLocaleString()}`
+            });
+          }
         }
       }
+    }
+    /**
+     * 获取所有已设置的提醒
+     */
+    getAllScheduledNotifications() {
+      const now2 = Date.now();
+      const upcoming = [];
+      const past = [];
+      for (const [id, notification] of this.notifications) {
+        if (notification.reminderTime > now2) {
+          const timeLeft = notification.reminderTime - now2;
+          upcoming.push({
+            id,
+            eventId: notification.eventId,
+            title: notification.title,
+            reminderText: this.getReminderTimeText(notification.reminderMinutes),
+            reminderTime: new Date(notification.reminderTime).toLocaleString(),
+            starts: new Date(notification.startTime).toLocaleString(),
+            secondsLeft: Math.round(timeLeft / 1e3),
+            minutesLeft: Math.round(timeLeft / 6e4)
+          });
+        } else {
+          past.push({
+            id,
+            eventId: notification.eventId,
+            title: notification.title,
+            reminderText: this.getReminderTimeText(notification.reminderMinutes)
+          });
+        }
+      }
+      return {
+        upcoming,
+        past,
+        total: this.notifications.size
+      };
+    }
+    /**
+     * 清除所有提醒跟踪记录
+     */
+    clearAllNotifications() {
+      this.notifications.clear();
+      formatAppLog("log", "at utils/reminder.js:380", "🗑️ 已清除所有提醒跟踪记录");
     }
   }
   const reminderService = new ReminderService();
@@ -17301,6 +17496,11 @@ This will fail in production.`);
     const events = vue.ref([]);
     const loading = vue.ref(false);
     const debugInfo = vue.ref("");
+    const isFetching = vue.ref(false);
+    const lastMonthKey = vue.ref("");
+    const cachedMonthData = vue.ref(null);
+    const eventsCache = vue.ref({});
+    const lastFetchTime = vue.ref(0);
     const colorOptions = vue.ref([
       "#2979ff",
       "#f56c6c",
@@ -17310,6 +17510,18 @@ This will fail in production.`);
       "#ff85c0",
       "#5cdbd3",
       "#b37feb"
+    ]);
+    const reminderOptions = vue.ref([
+      { label: "准时", value: 0 },
+      { label: "5分钟前", value: 5 },
+      { label: "10分钟前", value: 10 },
+      { label: "15分钟前", value: 15 },
+      { label: "30分钟前", value: 30 },
+      { label: "1小时前", value: 60 },
+      { label: "2小时前", value: 120 },
+      { label: "1天前", value: 1440 },
+      { label: "2天前", value: 2880 },
+      { label: "1周前", value: 10080 }
     ]);
     const getBaseURL = () => {
       return "https://oozy-moaningly-macy.ngrok-free.dev";
@@ -17343,6 +17555,10 @@ This will fail in production.`);
       }
     });
     const monthDays = vue.computed(() => {
+      const currentMonthKey = selectedDate.value.format("YYYY-MM");
+      if (currentMonthKey === lastMonthKey.value && cachedMonthData.value) {
+        return cachedMonthData.value;
+      }
       const startDay = selectedDate.value.clone().startOf("month").startOf("week");
       const endDay = selectedDate.value.clone().endOf("month").endOf("week");
       const days2 = [];
@@ -17358,13 +17574,15 @@ This will fail in production.`);
           date: day.clone(),
           day: day.date(),
           lunarDay: festival || lunarText,
-          // 农历或节日
           isCurrentMonth: day.isSame(selectedDate.value, "month"),
           isToday: day.isSame(hooks(), "day"),
-          isSelected: day.isSame(selectedDate.value, "day")
+          isSelected: day.isSame(selectedDate.value, "day"),
+          dateStr: day.format("YYYY-MM-DD")
         });
         day.add(1, "day");
       }
+      lastMonthKey.value = currentMonthKey;
+      cachedMonthData.value = days2;
       return days2;
     });
     const weekDays = vue.computed(() => {
@@ -17375,11 +17593,52 @@ This will fail in production.`);
         days2.push({
           fullDate: day,
           weekday: ["日", "一", "二", "三", "四", "五", "六"][i],
-          date: day.date()
+          date: day.date(),
+          dateStr: day.format("YYYY-MM-DD")
         });
       }
       return days2;
     });
+    const buildEventsCache = () => {
+      eventsCache.value = {};
+      events.value.forEach((event) => {
+        const startMoment = hooks(event.startDate);
+        const endMoment = hooks(event.endDate);
+        let current = startMoment.clone();
+        while (current.isSameOrBefore(endMoment, "day")) {
+          const dateStr = current.format("YYYY-MM-DD");
+          if (!eventsCache.value[dateStr]) {
+            eventsCache.value[dateStr] = [];
+          }
+          eventsCache.value[dateStr].push(event);
+          current.add(1, "day");
+        }
+      });
+    };
+    const getTimeEventsForDay = (date) => {
+      const dateStr = hooks(date).format("YYYY-MM-DD");
+      return eventsCache.value[dateStr] || [];
+    };
+    const getEventsForTimeSlot = (date, time) => {
+      const dateStr = hooks(date).format("YYYY-MM-DD");
+      const eventsForDate = eventsCache.value[dateStr] || [];
+      return eventsForDate.filter((event) => {
+        const isSingleDay = event.startDate === event.endDate;
+        const isNotAllDay = !event.isAllDay;
+        const timeMatch = time >= event.startTime && time < event.endTime;
+        return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch;
+      });
+    };
+    const getLongEventsForDay = (date) => {
+      const dateStr = hooks(date).format("YYYY-MM-DD");
+      const eventsForDate = eventsCache.value[dateStr] || [];
+      return eventsForDate.filter((event) => {
+        const isMultiDay = event.startDate !== event.endDate;
+        const isAllDay = event.isAllDay === true;
+        const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate;
+        return (isMultiDay || isAllDay) && isWithinRange;
+      });
+    };
     const switchView = (view) => {
       currentView.value = view;
     };
@@ -17395,7 +17654,6 @@ This will fail in production.`);
           selectedDate.value = selectedDate.value.clone().subtract(1, "day");
           break;
       }
-      loadEvents();
     };
     const nextPeriod = () => {
       switch (currentView.value) {
@@ -17409,51 +17667,245 @@ This will fail in production.`);
           selectedDate.value = selectedDate.value.clone().add(1, "day");
           break;
       }
-      loadEvents();
     };
     const goToToday = () => {
       selectedDate.value = hooks();
-      loadEvents();
     };
     const selectDate = (date) => {
       selectedDate.value = date.clone();
-      loadEvents();
     };
-    const getTimeEventsForDay = (date) => {
-      const dateStr = date.format("YYYY-MM-DD");
-      return events.value.filter(
-        (event) => event.startDate === dateStr || event.endDate === dateStr || event.startDate <= dateStr && event.endDate >= dateStr
-      );
-    };
-    const getEventsForDayAndTime = (date, time) => {
-      const dateStr = date.format("YYYY-MM-DD");
-      return events.value.filter((event) => {
-        const dateMatch = event.startDate === dateStr || event.endDate === dateStr || event.startDate <= dateStr && event.endDate >= dateStr;
-        if (!dateMatch)
-          return false;
-        if (event.startTime && event.endTime) {
-          return time >= event.startTime && time < event.endTime;
+    const loadEventsSilently = async () => {
+      if (isFetching.value)
+        return;
+      const now2 = Date.now();
+      if (now2 - lastFetchTime.value < 2e3) {
+        return;
+      }
+      try {
+        isFetching.value = true;
+        lastFetchTime.value = now2;
+        const baseURL = getBaseURL();
+        const url = baseURL + "/api/events?userId=default-user";
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: "GET",
+            timeout: 1e4,
+            header: getRequestHeaders(),
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          });
+        });
+        const { statusCode, responseData } = handleUniResponse(response);
+        if (statusCode === 200) {
+          let newEvents = [];
+          if (Array.isArray(responseData)) {
+            newEvents = responseData;
+          } else if (responseData && Array.isArray(responseData.data)) {
+            newEvents = responseData.data;
+          } else if (responseData && Array.isArray(responseData.events)) {
+            newEvents = responseData.events;
+          }
+          if (JSON.stringify(events.value) !== JSON.stringify(newEvents)) {
+            events.value = newEvents;
+            buildEventsCache();
+            formatAppLog("log", "at stores/calendar.js:294", `✅ 静默更新 ${newEvents.length} 个日程`);
+          }
         }
-        return false;
-      });
+      } catch (error) {
+        formatAppLog("error", "at stores/calendar.js:298", "静默加载失败:", error);
+      } finally {
+        isFetching.value = false;
+      }
     };
-    const getLongEventsForDay = (date) => {
-      const dateStr = date.format("YYYY-MM-DD");
-      return events.value.filter((event) => {
-        const isMultiDay = event.startDate !== event.endDate;
-        const isAllDay = event.isAllDay === true;
-        const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate;
-        return (isMultiDay || isAllDay) && isWithinRange;
-      });
+    const loadEvents = async () => {
+      try {
+        loading.value = true;
+        const baseURL = getBaseURL();
+        const url = baseURL + "/api/events?userId=default-user";
+        formatAppLog("log", "at stores/calendar.js:312", "请求日程数据:", url);
+        formatAppLog("log", "at stores/calendar.js:313", "请求头:", getRequestHeaders());
+        formatAppLog("log", "at stores/calendar.js:314", "当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: "GET",
+            timeout: 3e4,
+            header: getRequestHeaders(),
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          });
+        });
+        const contentType = response.header && response.header["Content-Type"];
+        if (contentType && contentType.includes("text/html")) {
+          throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
+        }
+        const { statusCode, responseData } = handleUniResponse(response);
+        formatAppLog("log", "at stores/calendar.js:335", "响应状态:", statusCode);
+        formatAppLog("log", "at stores/calendar.js:336", "响应数据:", responseData);
+        if (statusCode === 200) {
+          let newEvents = [];
+          if (Array.isArray(responseData)) {
+            newEvents = responseData;
+          } else if (responseData && Array.isArray(responseData.data)) {
+            newEvents = responseData.data;
+          } else if (responseData && Array.isArray(responseData.events)) {
+            newEvents = responseData.events;
+          } else {
+            formatAppLog("warn", "at stores/calendar.js:348", "无法识别的数据格式");
+            newEvents = [];
+          }
+          events.value = newEvents;
+          buildEventsCache();
+          formatAppLog("log", "at stores/calendar.js:354", `成功加载 ${events.value.length} 个日程`);
+        } else {
+          throw new Error(`HTTP错误: ${statusCode}`);
+        }
+      } catch (error) {
+        formatAppLog("error", "at stores/calendar.js:359", "加载事件失败:", error);
+        uni.showToast({
+          title: "加载失败: " + error.message,
+          icon: "none",
+          duration: 4e3
+        });
+        events.value = [];
+      } finally {
+        loading.value = false;
+      }
     };
-    const getEventsForTimeSlot = (date, time) => {
-      const dateStr = date.format("YYYY-MM-DD");
-      return events.value.filter((event) => {
-        const isSingleDay = event.startDate === event.endDate;
-        const isNotAllDay = !event.isAllDay;
-        const timeMatch = time >= event.startTime && time < event.endTime;
-        return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch;
-      });
+    const startSilentRefresh = () => {
+      formatAppLog("log", "at stores/calendar.js:373", "⏰ 启动静默刷新");
+      setInterval(() => {
+        if (!loading.value) {
+          loadEventsSilently();
+        }
+      }, 5 * 60 * 1e3);
+    };
+    const createEvent = async (eventData) => {
+      try {
+        const baseURL = getBaseURL();
+        const url = baseURL + "/api/events";
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: "POST",
+            data: {
+              ...eventData,
+              userId: "default-user"
+            },
+            header: getRequestHeaders(),
+            timeout: 1e4,
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          });
+        });
+        const { statusCode, responseData } = handleUniResponse(response);
+        if (statusCode === 200 || statusCode === 201) {
+          if (!responseData) {
+            throw new Error("创建日程失败: 响应数据为空");
+          }
+          const result = responseData.data || responseData;
+          setTimeout(() => {
+            loadEventsSilently();
+          }, 500);
+          if (eventData.reminders && eventData.reminders.length > 0) {
+            formatAppLog("log", "at stores/calendar.js:432", `📅 为日程 "${result.title}" 设置 ${eventData.reminders.length} 个提醒`);
+            for (const reminderMinutes of eventData.reminders) {
+              const reminderResult = {
+                ...result,
+                reminderMinutes
+              };
+              await reminderService.createLocalNotification(reminderResult);
+            }
+          } else {
+            formatAppLog("log", "at stores/calendar.js:444", "⏰ 未设置提醒");
+          }
+          return result;
+        } else {
+          throw new Error(`HTTP错误: ${statusCode}`);
+        }
+      } catch (error) {
+        formatAppLog("error", "at stores/calendar.js:452", "创建事件失败:", error);
+        throw error;
+      }
+    };
+    const updateEvent = async (eventId, eventData) => {
+      try {
+        const baseURL = getBaseURL();
+        const url = baseURL + `/api/events/${eventId}`;
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: "PUT",
+            data: eventData,
+            header: getRequestHeaders(),
+            timeout: 1e4,
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          });
+        });
+        const { statusCode, responseData } = handleUniResponse(response);
+        reminderService.cancelNotification(eventId);
+        if (eventData.reminders && eventData.reminders.length > 0) {
+          formatAppLog("log", "at stores/calendar.js:481", `📅 更新日程提醒，设置 ${eventData.reminders.length} 个提醒`);
+          const updatedEvent = { ...eventData, _id: eventId };
+          for (const reminderMinutes of eventData.reminders) {
+            const reminderEvent = {
+              ...updatedEvent,
+              reminderMinutes
+            };
+            await reminderService.createLocalNotification(reminderEvent);
+          }
+        }
+        setTimeout(() => {
+          loadEventsSilently();
+        }, 500);
+        if (statusCode === 200) {
+          if (responseData) {
+            return responseData.data || responseData;
+          } else {
+            throw new Error("更新日程失败: 响应数据为空");
+          }
+        } else {
+          throw new Error(`HTTP错误: ${statusCode}`);
+        }
+      } catch (error) {
+        formatAppLog("error", "at stores/calendar.js:511", "更新事件失败:", error);
+        throw error;
+      }
+    };
+    const deleteEvent = async (eventId) => {
+      try {
+        const baseURL = getBaseURL();
+        const url = baseURL + `/api/events/${eventId}`;
+        const response = await new Promise((resolve, reject) => {
+          uni.request({
+            url,
+            method: "DELETE",
+            header: getRequestHeaders(),
+            timeout: 1e4,
+            success: (res) => resolve(res),
+            fail: (err) => reject(err)
+          });
+        });
+        const { statusCode, responseData } = handleUniResponse(response);
+        reminderService.cancelNotification(eventId);
+        setTimeout(() => {
+          loadEventsSilently();
+        }, 500);
+        if (statusCode === 200) {
+          if (responseData) {
+            return responseData.data || responseData;
+          } else {
+            throw new Error("删除日程失败: 响应数据为空");
+          }
+        } else {
+          throw new Error(`HTTP错误: ${statusCode}`);
+        }
+      } catch (error) {
+        formatAppLog("error", "at stores/calendar.js:552", "删除事件失败:", error);
+        throw error;
+      }
     };
     const handleUniResponse = (response) => {
       let statusCode, responseData;
@@ -17485,26 +17937,35 @@ This will fail in production.`);
         debugLog.push(`📡 API状态码: ${eventsResult.statusCode}`);
         debugLog.push(`📦 原始数据格式: ${typeof eventsResult.responseData}`);
         debugLog.push(`🔢 解析后事件数量: ${eventsResult.parsedData.length}`);
-        debugLog.push("\n🔍 测试4: 数据格式分析");
-        if (eventsResult.responseData) {
-          debugLog.push(`📊 响应数据Keys: ${Object.keys(eventsResult.responseData).join(", ")}`);
-          if (Array.isArray(eventsResult.responseData)) {
-            debugLog.push("✅ 数据格式: 直接数组");
-          } else if (eventsResult.responseData.data) {
-            debugLog.push("✅ 数据格式: 包含data字段的对象");
-          } else if (eventsResult.responseData.events) {
-            debugLog.push("✅ 数据格式: 包含events字段的对象");
-          } else {
-            debugLog.push("❓ 数据格式: 未知格式");
-          }
-        }
+        debugLog.push("\n🔔 测试4: 提醒服务状态");
+        const reminders = reminderService.getAllScheduledNotifications();
+        debugLog.push(`📊 提醒总数: ${reminders.total}`);
+        debugLog.push(`⏳ 即将触发: ${reminders.upcoming.length}`);
+        debugLog.push(`✅ 已触发: ${reminders.past.length}`);
         debugLog.push("\n🎯 ===== 调试完成 =====");
       } catch (error) {
         debugLog.push(`❌ 调试过程中出错: ${error.message}`);
       }
-      formatAppLog("log", "at stores/calendar.js:313", debugLog.join("\n"));
+      formatAppLog("log", "at stores/calendar.js:632", debugLog.join("\n"));
       debugInfo.value = debugLog.join("\n");
       return debugLog;
+    };
+    const debugReminders = () => {
+      formatAppLog("log", "at stores/calendar.js:640", "🔔 当前所有提醒:");
+      const reminders = reminderService.getAllScheduledNotifications();
+      formatAppLog("log", "at stores/calendar.js:642", `总计: ${reminders.total} 个提醒`);
+      if (reminders.upcoming.length > 0) {
+        formatAppLog("log", "at stores/calendar.js:645", "⏳ 即将触发的提醒:");
+        reminders.upcoming.forEach((reminder) => {
+          formatAppLog("log", "at stores/calendar.js:647", `  📅 ${reminder.title} - ${reminder.reminderText} (${reminder.minutesLeft}分钟后)`);
+        });
+      }
+      if (reminders.past.length > 0) {
+        formatAppLog("log", "at stores/calendar.js:652", "✅ 已触发的提醒:");
+        reminders.past.forEach((reminder) => {
+          formatAppLog("log", "at stores/calendar.js:654", `  📅 ${reminder.title} - ${reminder.reminderText}`);
+        });
+      }
     };
     const testHealth = async () => {
       try {
@@ -17516,7 +17977,6 @@ This will fail in production.`);
             method: "GET",
             timeout: 1e4,
             header: getRequestHeaders(),
-            // 使用动态头部
             success: (res) => resolve(res),
             fail: (err) => reject(err)
           });
@@ -17562,7 +18022,6 @@ This will fail in production.`);
             method: "GET",
             timeout: 15e3,
             header: getRequestHeaders(),
-            // 使用动态头部
             success: (res) => resolve(res),
             fail: (err) => reject(err)
           });
@@ -17588,163 +18047,6 @@ This will fail in production.`);
         };
       }
     };
-    const loadEvents = async () => {
-      try {
-        loading.value = true;
-        const baseURL = getBaseURL();
-        const url = baseURL + "/api/events?userId=default-user";
-        formatAppLog("log", "at stores/calendar.js:422", "请求日程数据:", url);
-        formatAppLog("log", "at stores/calendar.js:423", "请求头:", getRequestHeaders());
-        formatAppLog("log", "at stores/calendar.js:424", "当前环境:", isNgrokEnvironment() ? "Ngrok" : "本地");
-        const response = await new Promise((resolve, reject) => {
-          uni.request({
-            url,
-            method: "GET",
-            timeout: 3e4,
-            header: getRequestHeaders(),
-            // 使用动态头部
-            success: (res) => resolve(res),
-            fail: (err) => reject(err)
-          });
-        });
-        const contentType = response.header && response.header["Content-Type"];
-        if (contentType && contentType.includes("text/html")) {
-          throw new Error("服务器返回了HTML页面而不是JSON数据，请检查ngrok配置");
-        }
-        const { statusCode, responseData } = handleUniResponse(response);
-        formatAppLog("log", "at stores/calendar.js:445", "响应状态:", statusCode);
-        formatAppLog("log", "at stores/calendar.js:446", "响应数据:", responseData);
-        if (statusCode === 200) {
-          if (Array.isArray(responseData)) {
-            events.value = responseData;
-          } else if (responseData && Array.isArray(responseData.data)) {
-            events.value = responseData.data;
-          } else if (responseData && Array.isArray(responseData.events)) {
-            events.value = responseData.events;
-          } else {
-            formatAppLog("warn", "at stores/calendar.js:457", "无法识别的数据格式");
-            events.value = [];
-          }
-          formatAppLog("log", "at stores/calendar.js:461", `成功加载 ${events.value.length} 个日程`);
-        } else {
-          throw new Error(`HTTP错误: ${statusCode}`);
-        }
-      } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:466", "加载事件失败:", error);
-        uni.showToast({
-          title: "加载失败: " + error.message,
-          icon: "none",
-          duration: 4e3
-        });
-        events.value = [];
-      } finally {
-        loading.value = false;
-      }
-    };
-    const createEvent = async (eventData) => {
-      try {
-        const baseURL = getBaseURL();
-        const url = baseURL + "/api/events";
-        const response = await new Promise((resolve, reject) => {
-          uni.request({
-            url,
-            method: "POST",
-            data: {
-              ...eventData,
-              userId: "default-user"
-            },
-            header: getRequestHeaders(),
-            // 使用动态头部
-            timeout: 1e4,
-            success: (res) => resolve(res),
-            fail: (err) => reject(err)
-          });
-        });
-        const { statusCode, responseData } = handleUniResponse(response);
-        if (statusCode === 200 || statusCode === 201) {
-          if (!responseData) {
-            throw new Error("创建日程失败: 响应数据为空");
-          }
-          const result = responseData.data || responseData;
-          await loadEvents();
-          reminderService.createLocalNotification(result).catch((e) => {
-            formatAppLog("error", "at stores/calendar.js:515", "提醒设置失败，但不影响 UI:", e);
-          });
-          return result;
-        } else {
-          throw new Error(`HTTP错误: ${statusCode}`);
-        }
-      } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:524", "创建事件失败:", error);
-        throw error;
-      }
-    };
-    const updateEvent = async (eventId, eventData) => {
-      try {
-        const baseURL = getBaseURL();
-        const url = baseURL + `/api/events/${eventId}`;
-        const response = await new Promise((resolve, reject) => {
-          uni.request({
-            url,
-            method: "PUT",
-            data: eventData,
-            header: getRequestHeaders(),
-            // 使用动态头部
-            timeout: 1e4,
-            success: (res) => resolve(res),
-            fail: (err) => reject(err)
-          });
-        });
-        const { statusCode, responseData } = handleUniResponse(response);
-        reminderService.cancelNotification(eventId);
-        await reminderService.createLocalNotification({ ...eventData, _id: eventId });
-        await loadEvents();
-        if (statusCode === 200) {
-          if (responseData) {
-            await loadEvents();
-            return responseData.data || responseData;
-          } else {
-            throw new Error("更新日程失败: 响应数据为空");
-          }
-        } else {
-          throw new Error(`HTTP错误: ${statusCode}`);
-        }
-      } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:563", "更新事件失败:", error);
-        throw error;
-      }
-    };
-    const deleteEvent = async (eventId) => {
-      try {
-        const baseURL = getBaseURL();
-        const url = baseURL + `/api/events/${eventId}`;
-        const response = await new Promise((resolve, reject) => {
-          uni.request({
-            url,
-            method: "DELETE",
-            header: getRequestHeaders(),
-            // 使用动态头部
-            timeout: 1e4,
-            success: (res) => resolve(res),
-            fail: (err) => reject(err)
-          });
-        });
-        const { statusCode, responseData } = handleUniResponse(response);
-        reminderService.cancelNotification(eventId);
-        if (statusCode === 200) {
-          if (responseData) {
-            await loadEvents();
-          } else {
-            throw new Error("删除日程失败: 响应数据为空");
-          }
-        } else {
-          throw new Error(`HTTP错误: ${statusCode}`);
-        }
-      } catch (error) {
-        formatAppLog("error", "at stores/calendar.js:598", "删除事件失败:", error);
-        throw error;
-      }
-    };
     return {
       // 状态
       pageTitle,
@@ -17753,6 +18055,7 @@ This will fail in production.`);
       events,
       loading,
       colorOptions,
+      reminderOptions,
       debugInfo,
       // 计算属性
       displayDate,
@@ -17765,15 +18068,18 @@ This will fail in production.`);
       goToToday,
       selectDate,
       getTimeEventsForDay,
-      getEventsForDayAndTime,
-      getLongEventsForDay,
       getEventsForTimeSlot,
+      getLongEventsForDay,
       loadEvents,
       createEvent,
       updateEvent,
       deleteEvent,
+      // 新增的优化方法
+      loadEventsSilently,
+      startSilentRefresh,
       // 调试方法
       debugSystem,
+      debugReminders,
       testHealth,
       testNetwork,
       testEventsAPI,
@@ -17801,13 +18107,79 @@ This will fail in production.`);
         endTime: "10:00",
         color: "#2979ff",
         notes: "",
-        isAllDay: false
+        isAllDay: false,
+        reminders: []
       });
       const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
       const timeSlots = Array.from(
         { length: 24 },
         (_, i) => `${i.toString().padStart(2, "0")}:00`
       );
+      const monthDayEvents = vue.computed(() => {
+        if (calendarStore.currentView !== "month")
+          return {};
+        const eventsMap = {};
+        calendarStore.monthDays.forEach((day) => {
+          const dateStr = day.dateStr;
+          if (dateStr) {
+            const dayEvents = calendarStore.getTimeEventsForDay(day.date).slice(0, 3);
+            eventsMap[dateStr] = dayEvents;
+          }
+        });
+        return eventsMap;
+      });
+      const sortedReminders = vue.computed(() => {
+        return [...eventForm.reminders].sort((a, b) => a - b);
+      });
+      const toggleReminder = (value) => {
+        const index = eventForm.reminders.indexOf(value);
+        if (index === -1) {
+          eventForm.reminders.push(value);
+          eventForm.reminders.sort((a, b) => a - b);
+        } else {
+          eventForm.reminders.splice(index, 1);
+        }
+      };
+      const clearReminders = () => {
+        eventForm.reminders = [];
+      };
+      const getReminderLabel = (minutes2) => {
+        const option = calendarStore.reminderOptions.find((opt) => opt.value === minutes2);
+        return option ? option.label : `${minutes2}分钟前`;
+      };
+      const handleSwitchView = (view) => {
+        const oldView = calendarStore.currentView;
+        calendarStore.switchView(view);
+        if (oldView !== view) {
+          setTimeout(() => {
+            calendarStore.loadEventsSilently();
+          }, 300);
+        }
+      };
+      const handlePreviousPeriod = () => {
+        calendarStore.previousPeriod();
+        setTimeout(() => {
+          calendarStore.loadEventsSilently();
+        }, 200);
+      };
+      const handleNextPeriod = () => {
+        calendarStore.nextPeriod();
+        setTimeout(() => {
+          calendarStore.loadEventsSilently();
+        }, 200);
+      };
+      const handleGoToToday = () => {
+        calendarStore.goToToday();
+        setTimeout(() => {
+          calendarStore.loadEventsSilently();
+        }, 200);
+      };
+      const handleSelectDate = (date) => {
+        calendarStore.selectDate(date);
+        setTimeout(() => {
+          calendarStore.loadEventsSilently();
+        }, 200);
+      };
       const syncScroll = () => {
         const timeColumn = timeColumnRef.value;
         const daysContent = daysContentRef.value;
@@ -17821,11 +18193,11 @@ This will fail in production.`);
         }
       };
       const getLimitedEventsForTimeSlot = (date, time) => {
-        const events = calendarStore.getEventsForDayAndTime(date, time);
+        const events = calendarStore.getEventsForTimeSlot(date, time);
         return events.slice(0, 2);
       };
       const hasMoreEvents = (date, time) => {
-        const events = calendarStore.getEventsForDayAndTime(date, time);
+        const events = calendarStore.getEventsForTimeSlot(date, time);
         return events.length > 2;
       };
       const getShortTitle = (title) => {
@@ -17835,7 +18207,7 @@ This will fail in production.`);
         return title.substring(0, 6) + "...";
       };
       const handleViewMoreEvents = (date, time) => {
-        const events = calendarStore.getEventsForDayAndTime(date, time);
+        const events = calendarStore.getEventsForTimeSlot(date, time);
         uni.showActionSheet({
           title: `${hooks(date).format("MM月DD日")} ${time} 的事件`,
           itemList: events.map((event) => event.title),
@@ -17896,6 +18268,7 @@ This will fail in production.`);
         eventForm.endTime = event.endTime || "10:00";
         eventForm.color = event.color || "#2979ff";
         eventForm.notes = event.notes || "";
+        eventForm.reminders = event.reminders || [];
         showEventModal.value = true;
         vue.nextTick(() => {
           autoFocusTitle.value = true;
@@ -17909,6 +18282,7 @@ This will fail in production.`);
         eventForm.endTime = "10:00";
         eventForm.color = "#2979ff";
         eventForm.notes = "";
+        eventForm.reminders = [];
         autoFocusTitle.value = false;
       };
       const handleSaveEvent = async () => {
@@ -17949,7 +18323,7 @@ This will fail in production.`);
           }
           closeEventModal();
         } catch (error) {
-          formatAppLog("error", "at pages/index/index.vue:513", "保存日程失败:", error);
+          formatAppLog("error", "at pages/index/index.vue:672", "保存日程失败:", error);
           uni.showToast({
             title: error.message || "保存失败，请重试",
             icon: "none"
@@ -17972,7 +18346,7 @@ This will fail in production.`);
                 });
                 closeEventModal();
               } catch (error) {
-                formatAppLog("error", "at pages/index/index.vue:537", "删除日程失败:", error);
+                formatAppLog("error", "at pages/index/index.vue:696", "删除日程失败:", error);
                 uni.showToast({
                   title: error.message || "删除失败，请重试",
                   icon: "none"
@@ -17988,31 +18362,29 @@ This will fail in production.`);
         isEditing.value = false;
         editingEventId.value = null;
       };
-      vue.watch([() => calendarStore.currentView, () => calendarStore.selectedDate], () => {
-        calendarStore.loadEvents();
-        if (calendarStore.currentView === "week") {
-          vue.nextTick(() => {
-            setTimeout(syncScroll, 100);
-          });
-        }
-      });
       vue.onMounted(() => {
-        formatAppLog("log", "at pages/index/index.vue:566", "🚀 日历应用启动");
-        setTimeout(() => {
-          calendarStore.debugSystem().then(() => {
-            formatAppLog("log", "at pages/index/index.vue:571", "🎯 系统调试完成，开始加载日程数据");
-            calendarStore.loadEvents();
-          }).catch((error) => {
-            formatAppLog("error", "at pages/index/index.vue:575", "❌ 系统调试失败:", error);
-            calendarStore.loadEvents();
-          });
-        }, 1e3);
+        formatAppLog("log", "at pages/index/index.vue:717", "🚀 日历应用启动");
+        formatAppLog("log", "at pages/index/index.vue:720", "🔔 提醒服务状态:", reminderService.initialized ? "已初始化" : "未初始化");
         calendarStore.loadEvents();
+        setTimeout(() => {
+          calendarStore.startSilentRefresh();
+        }, 3e3);
         vue.nextTick(() => {
           setTimeout(syncScroll, 100);
         });
+        setTimeout(() => {
+          try {
+            const notification = uni.getStorageSync("lastClickedNotification");
+            if (notification) {
+              formatAppLog("log", "at pages/index/index.vue:752", "发现通知点击记录:", notification);
+              uni.removeStorageSync("lastClickedNotification");
+            }
+          } catch (error) {
+            formatAppLog("error", "at pages/index/index.vue:756", "检查通知记录失败:", error);
+          }
+        }, 1e3);
       });
-      const __returned__ = { calendarStore, showEventModal, isEditing, editingEventId, autoFocusTitle, timeColumnRef, daysContentRef, eventForm, weekdays, timeSlots, syncScroll, getLimitedEventsForTimeSlot, hasMoreEvents, getShortTitle, handleViewMoreEvents, getEventsForTimeSlot, handleDateChange, handleTimeChange, handleAddEvent, handleAddEventAtTime, handleViewEvent, resetEventForm, handleSaveEvent, handleDeleteEvent, closeEventModal };
+      const __returned__ = { calendarStore, showEventModal, isEditing, editingEventId, autoFocusTitle, timeColumnRef, daysContentRef, eventForm, weekdays, timeSlots, monthDayEvents, sortedReminders, toggleReminder, clearReminders, getReminderLabel, handleSwitchView, handlePreviousPeriod, handleNextPeriod, handleGoToToday, handleSelectDate, syncScroll, getLimitedEventsForTimeSlot, hasMoreEvents, getShortTitle, handleViewMoreEvents, getEventsForTimeSlot, handleDateChange, handleTimeChange, handleAddEvent, handleAddEventAtTime, handleViewEvent, resetEventForm, handleSaveEvent, handleDeleteEvent, closeEventModal };
       Object.defineProperty(__returned__, "__isScriptSetup", { enumerable: false, value: true });
       return __returned__;
     }
@@ -18051,7 +18423,7 @@ This will fail in production.`);
             "button",
             {
               class: vue.normalizeClass(["view-btn", { active: $setup.calendarStore.currentView === "month" }]),
-              onClick: _cache[0] || (_cache[0] = ($event) => $setup.calendarStore.switchView("month"))
+              onClick: _cache[0] || (_cache[0] = ($event) => $setup.handleSwitchView("month"))
             },
             " 月 ",
             2
@@ -18061,7 +18433,7 @@ This will fail in production.`);
             "button",
             {
               class: vue.normalizeClass(["view-btn", { active: $setup.calendarStore.currentView === "week" }]),
-              onClick: _cache[1] || (_cache[1] = ($event) => $setup.calendarStore.switchView("week"))
+              onClick: _cache[1] || (_cache[1] = ($event) => $setup.handleSwitchView("week"))
             },
             " 周 ",
             2
@@ -18071,7 +18443,7 @@ This will fail in production.`);
             "button",
             {
               class: vue.normalizeClass(["view-btn", { active: $setup.calendarStore.currentView === "day" }]),
-              onClick: _cache[2] || (_cache[2] = ($event) => $setup.calendarStore.switchView("day"))
+              onClick: _cache[2] || (_cache[2] = ($event) => $setup.handleSwitchView("day"))
             },
             " 日 ",
             2
@@ -18081,7 +18453,7 @@ This will fail in production.`);
         vue.createElementVNode("view", { class: "date-navigation" }, [
           vue.createElementVNode("button", {
             class: "nav-btn",
-            onClick: _cache[3] || (_cache[3] = (...args) => $setup.calendarStore.previousPeriod && $setup.calendarStore.previousPeriod(...args))
+            onClick: $setup.handlePreviousPeriod
           }, " ‹ "),
           vue.createElementVNode(
             "text",
@@ -18092,11 +18464,11 @@ This will fail in production.`);
           ),
           vue.createElementVNode("button", {
             class: "nav-btn",
-            onClick: _cache[4] || (_cache[4] = (...args) => $setup.calendarStore.nextPeriod && $setup.calendarStore.nextPeriod(...args))
+            onClick: $setup.handleNextPeriod
           }, " › "),
           vue.createElementVNode("button", {
             class: "today-btn",
-            onClick: _cache[5] || (_cache[5] = (...args) => $setup.calendarStore.goToToday && $setup.calendarStore.goToToday(...args))
+            onClick: $setup.handleGoToToday
           }, " 今天 ")
         ])
       ]),
@@ -18137,7 +18509,7 @@ This will fail in production.`);
                     "today": day.isToday,
                     "selected": day.isSelected
                   }]),
-                  onClick: ($event) => $setup.calendarStore.selectDate(day.date)
+                  onClick: ($event) => $setup.handleSelectDate(day.date)
                 }, [
                   vue.createElementVNode("view", { class: "day-content-wrapper" }, [
                     vue.createElementVNode(
@@ -18159,7 +18531,7 @@ This will fail in production.`);
                     (vue.openBlock(true), vue.createElementBlock(
                       vue.Fragment,
                       null,
-                      vue.renderList($setup.calendarStore.getTimeEventsForDay(day.date).slice(0, 3), (event) => {
+                      vue.renderList($setup.monthDayEvents[day.dateStr], (event) => {
                         return vue.openBlock(), vue.createElementBlock(
                           "view",
                           {
@@ -18197,7 +18569,7 @@ This will fail in production.`);
                   return vue.openBlock(), vue.createElementBlock("view", {
                     key: day.fullDate.toString(),
                     class: "day-header-cell",
-                    onClick: ($event) => $setup.calendarStore.selectDate(day.fullDate)
+                    onClick: ($event) => $setup.handleSelectDate(day.fullDate)
                   }, [
                     vue.createElementVNode(
                       "text",
@@ -18293,7 +18665,11 @@ This will fail in production.`);
                                           vue.toDisplayString(index === 1 && $setup.hasMoreEvents(day.fullDate, time) ? "..." : $setup.getShortTitle(event.title)),
                                           1
                                           /* TEXT */
-                                        )
+                                        ),
+                                        event.reminders && event.reminders.length > 0 ? (vue.openBlock(), vue.createElementBlock("view", {
+                                          key: 0,
+                                          class: "reminder-icon"
+                                        }, " 🔔 ")) : vue.createCommentVNode("v-if", true)
                                       ], 14, ["onClick"]);
                                     }),
                                     128
@@ -18413,13 +18789,19 @@ This will fail in production.`);
                               1
                               /* TEXT */
                             ),
-                            vue.createElementVNode(
-                              "text",
-                              { class: "event-time" },
-                              vue.toDisplayString(event.startTime) + " - " + vue.toDisplayString(event.endTime),
-                              1
-                              /* TEXT */
-                            )
+                            vue.createElementVNode("view", { class: "event-time-and-reminder" }, [
+                              vue.createElementVNode(
+                                "text",
+                                { class: "event-time" },
+                                vue.toDisplayString(event.startTime) + " - " + vue.toDisplayString(event.endTime),
+                                1
+                                /* TEXT */
+                              ),
+                              event.reminders && event.reminders.length > 0 ? (vue.openBlock(), vue.createElementBlock("view", {
+                                key: 0,
+                                class: "day-reminder-icon"
+                              }, " 🔔 ")) : vue.createCommentVNode("v-if", true)
+                            ])
                           ], 12, ["onClick"]);
                         }),
                         128
@@ -18457,7 +18839,7 @@ This will fail in production.`);
             vue.createElementVNode("view", { class: "form-item" }, [
               vue.createElementVNode("text", { class: "form-label" }, "标题"),
               vue.withDirectives(vue.createElementVNode("input", {
-                "onUpdate:modelValue": _cache[6] || (_cache[6] = ($event) => $setup.eventForm.title = $event),
+                "onUpdate:modelValue": _cache[3] || (_cache[3] = ($event) => $setup.eventForm.title = $event),
                 class: "form-input",
                 placeholder: "请输入日程标题",
                 focus: $setup.autoFocusTitle
@@ -18472,7 +18854,7 @@ This will fail in production.`);
                   vue.createElementVNode("picker", {
                     mode: "date",
                     value: $setup.eventForm.startDate,
-                    onChange: _cache[7] || (_cache[7] = (e) => $setup.handleDateChange("startDate", e.detail.value)),
+                    onChange: _cache[4] || (_cache[4] = (e) => $setup.handleDateChange("startDate", e.detail.value)),
                     class: "date-picker"
                   }, [
                     vue.createElementVNode(
@@ -18486,7 +18868,7 @@ This will fail in production.`);
                   vue.createElementVNode("picker", {
                     mode: "time",
                     value: $setup.eventForm.startTime,
-                    onChange: _cache[8] || (_cache[8] = (e) => $setup.handleTimeChange("startTime", e.detail.value)),
+                    onChange: _cache[5] || (_cache[5] = (e) => $setup.handleTimeChange("startTime", e.detail.value)),
                     class: "time-picker"
                   }, [
                     vue.createElementVNode(
@@ -18505,7 +18887,7 @@ This will fail in production.`);
                   vue.createElementVNode("picker", {
                     mode: "date",
                     value: $setup.eventForm.endDate,
-                    onChange: _cache[9] || (_cache[9] = (e) => $setup.handleDateChange("endDate", e.detail.value)),
+                    onChange: _cache[6] || (_cache[6] = (e) => $setup.handleDateChange("endDate", e.detail.value)),
                     class: "date-picker"
                   }, [
                     vue.createElementVNode(
@@ -18519,7 +18901,7 @@ This will fail in production.`);
                   vue.createElementVNode("picker", {
                     mode: "time",
                     value: $setup.eventForm.endTime,
-                    onChange: _cache[10] || (_cache[10] = (e) => $setup.handleTimeChange("endTime", e.detail.value)),
+                    onChange: _cache[7] || (_cache[7] = (e) => $setup.handleTimeChange("endTime", e.detail.value)),
                     class: "time-picker"
                   }, [
                     vue.createElementVNode(
@@ -18553,11 +18935,89 @@ This will fail in production.`);
               ])
             ]),
             vue.createElementVNode("view", { class: "form-item" }, [
+              vue.createElementVNode("text", { class: "form-label" }, "提醒时间"),
+              vue.createElementVNode("view", { class: "reminder-picker" }, [
+                (vue.openBlock(true), vue.createElementBlock(
+                  vue.Fragment,
+                  null,
+                  vue.renderList($setup.calendarStore.reminderOptions, (option) => {
+                    return vue.openBlock(), vue.createElementBlock("view", {
+                      key: option.value,
+                      class: vue.normalizeClass(["reminder-option", { selected: $setup.eventForm.reminders.includes(option.value) }]),
+                      onClick: ($event) => $setup.toggleReminder(option.value)
+                    }, [
+                      vue.createElementVNode("view", { class: "reminder-checkbox" }, [
+                        $setup.eventForm.reminders.includes(option.value) ? (vue.openBlock(), vue.createElementBlock("text", {
+                          key: 0,
+                          class: "reminder-check"
+                        }, "✓")) : vue.createCommentVNode("v-if", true)
+                      ]),
+                      vue.createElementVNode(
+                        "text",
+                        { class: "reminder-label" },
+                        vue.toDisplayString(option.label),
+                        1
+                        /* TEXT */
+                      )
+                    ], 10, ["onClick"]);
+                  }),
+                  128
+                  /* KEYED_FRAGMENT */
+                )),
+                vue.createElementVNode(
+                  "view",
+                  {
+                    class: vue.normalizeClass(["reminder-option", { selected: $setup.eventForm.reminders.length === 0 }]),
+                    onClick: $setup.clearReminders
+                  },
+                  [
+                    vue.createElementVNode("view", { class: "reminder-checkbox" }, [
+                      $setup.eventForm.reminders.length === 0 ? (vue.openBlock(), vue.createElementBlock("text", {
+                        key: 0,
+                        class: "reminder-check"
+                      }, "✓")) : vue.createCommentVNode("v-if", true)
+                    ]),
+                    vue.createElementVNode("text", { class: "reminder-label" }, "无提醒")
+                  ],
+                  2
+                  /* CLASS */
+                )
+              ])
+            ]),
+            $setup.eventForm.reminders.length > 0 ? (vue.openBlock(), vue.createElementBlock("view", {
+              key: 0,
+              class: "form-item reminders-display"
+            }, [
+              vue.createElementVNode("text", { class: "form-label" }, "已设置提醒:"),
+              vue.createElementVNode("view", { class: "reminders-list" }, [
+                (vue.openBlock(true), vue.createElementBlock(
+                  vue.Fragment,
+                  null,
+                  vue.renderList($setup.sortedReminders, (reminder, index) => {
+                    return vue.openBlock(), vue.createElementBlock("view", {
+                      key: index,
+                      class: "reminder-badge"
+                    }, [
+                      vue.createElementVNode(
+                        "text",
+                        { class: "reminder-text" },
+                        vue.toDisplayString($setup.getReminderLabel(reminder)),
+                        1
+                        /* TEXT */
+                      )
+                    ]);
+                  }),
+                  128
+                  /* KEYED_FRAGMENT */
+                ))
+              ])
+            ])) : vue.createCommentVNode("v-if", true),
+            vue.createElementVNode("view", { class: "form-item" }, [
               vue.createElementVNode("text", { class: "form-label" }, "备注"),
               vue.withDirectives(vue.createElementVNode(
                 "textarea",
                 {
-                  "onUpdate:modelValue": _cache[11] || (_cache[11] = ($event) => $setup.eventForm.notes = $event),
+                  "onUpdate:modelValue": _cache[8] || (_cache[8] = ($event) => $setup.eventForm.notes = $event),
                   class: "form-textarea",
                   placeholder: "请输入备注信息"
                 },
@@ -18600,19 +19060,52 @@ This will fail in production.`);
   __definePage("pages/index/index", PagesIndexIndex);
   const _sfc_main = {
     onLaunch: function() {
-      formatAppLog("log", "at App.vue:4", "App Launch");
+      formatAppLog("log", "at App.vue:6", "App Launch");
+      reminderService.init().then(() => {
+        formatAppLog("log", "at App.vue:10", "🔔 提醒服务初始化完成");
+      }).catch((error) => {
+        formatAppLog("error", "at App.vue:12", "❌ 提醒服务初始化失败:", error);
+      });
       plus.push.addEventListener("click", (msg) => {
-        const payload = typeof msg.payload === "string" ? JSON.parse(msg.payload) : msg.payload;
-        if (payload && payload.eventId) {
-          formatAppLog("log", "at App.vue:11", "点击了日程通知，ID:", payload.eventId);
+        try {
+          let payload = null;
+          if (typeof msg.payload === "string") {
+            try {
+              payload = JSON.parse(msg.payload);
+            } catch (e) {
+              formatAppLog("warn", "at App.vue:24", "通知内容解析失败");
+              return;
+            }
+          } else {
+            payload = msg.payload || {};
+          }
+          if (payload && payload.id) {
+            formatAppLog("log", "at App.vue:32", "📱 点击了日程通知，ID:", payload.id);
+            try {
+              uni.setStorageSync("lastClickedNotification", {
+                eventId: payload.id,
+                eventTitle: payload.title || "日程提醒",
+                time: (/* @__PURE__ */ new Date()).toISOString()
+              });
+            } catch (e) {
+              formatAppLog("error", "at App.vue:42", "保存通知记录失败:", e);
+            }
+            uni.showToast({
+              title: `查看日程: ${payload.title || "日程提醒"}`,
+              icon: "none",
+              duration: 2e3
+            });
+          }
+        } catch (error) {
+          formatAppLog("error", "at App.vue:53", "处理通知点击时出错:", error);
         }
       }, false);
     },
     onShow: function() {
-      formatAppLog("log", "at App.vue:17", "App Show");
+      formatAppLog("log", "at App.vue:59", "App Show");
     },
     onHide: function() {
-      formatAppLog("log", "at App.vue:20", "App Hide");
+      formatAppLog("log", "at App.vue:62", "App Hide");
     }
   };
   const App = /* @__PURE__ */ _export_sfc(_sfc_main, [["__file", "D:/桌面/calendar-project/calendar/App.vue"]]);

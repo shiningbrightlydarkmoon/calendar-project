@@ -18,35 +18,35 @@
         <button 
           class="view-btn" 
           :class="{ active: calendarStore.currentView === 'month' }"
-          @click="calendarStore.switchView('month')"
+          @click="handleSwitchView('month')"
         >
           月
         </button>
         <button 
           class="view-btn" 
           :class="{ active: calendarStore.currentView === 'week' }"
-          @click="calendarStore.switchView('week')"
+          @click="handleSwitchView('week')"
         >
           周
         </button>
         <button 
           class="view-btn" 
           :class="{ active: calendarStore.currentView === 'day' }"
-          @click="calendarStore.switchView('day')"
+          @click="handleSwitchView('day')"
         >
           日
         </button>
       </view>
       
       <view class="date-navigation">
-        <button class="nav-btn" @click="calendarStore.previousPeriod">
+        <button class="nav-btn" @click="handlePreviousPeriod">
           ‹
         </button>
         <text class="current-date">{{ calendarStore.displayDate }}</text>
-        <button class="nav-btn" @click="calendarStore.nextPeriod">
+        <button class="nav-btn" @click="handleNextPeriod">
           ›
         </button>
-        <button class="today-btn" @click="calendarStore.goToToday">
+        <button class="today-btn" @click="handleGoToToday">
           今天
         </button>
       </view>
@@ -72,7 +72,7 @@
               'today': day.isToday,
               'selected': day.isSelected
             }"
-            @click="calendarStore.selectDate(day.date)"
+            @click="handleSelectDate(day.date)"
           >
             <view class="day-content-wrapper">
               <text class="day-number">{{ day.day }}</text>
@@ -80,9 +80,10 @@
             
             <text class="lunar-day">{{ day.lunarDay }}</text>
             
+            <!-- 优化：使用预计算的事件数据 -->
             <view class="event-dots">
               <view 
-                v-for="event in calendarStore.getTimeEventsForDay(day.date).slice(0, 3)"
+                v-for="event in monthDayEvents[day.dateStr]"
                 :key="event._id"
                 class="event-dot"
                 :style="{ backgroundColor: event.color }"
@@ -101,7 +102,7 @@
               v-for="day in calendarStore.weekDays" 
               :key="day.fullDate.toString()"
               class="day-header-cell"
-              @click="calendarStore.selectDate(day.fullDate)"
+              @click="handleSelectDate(day.fullDate)"
             >
               <text class="weekday">{{ day.weekday }}</text>
               <text class="date">{{ day.date }}</text>
@@ -144,6 +145,10 @@
                         <text class="event-title">
                           {{ index === 1 && hasMoreEvents(day.fullDate, time) ? '...' : getShortTitle(event.title) }}
                         </text>
+                        <!-- 添加提醒图标 -->
+                        <view v-if="event.reminders && event.reminders.length > 0" class="reminder-icon">
+                          🔔
+                        </view>
                       </view>
                     </view>
                   </view>
@@ -162,21 +167,21 @@
         </view>
         
         <view class="day-time-grid">
-		  <view class="all-day-header" v-if="calendarStore.getLongEventsForDay(calendarStore.selectedDate).length > 0">
-		      <view class="all-day-label">全天/跨天</view>
-		      <view class="all-day-list">
-		        <view 
-		          v-for="event in calendarStore.getLongEventsForDay(calendarStore.selectedDate)" 
-		          :key="event._id"
-		          class="long-event-item"
-		          :style="{ backgroundColor: event.color + '20', borderLeft: '8rpx solid ' + event.color }"
-		          @click.stop="handleViewEvent(event)" 
-		        >
-		          <text class="long-event-title">{{ event.title }}</text>
-		          <text class="long-event-time">{{ event.startDate }} 至 {{ event.endDate }}</text>
-		        </view>
-		      </view>
-		  </view>
+          <view class="all-day-header" v-if="calendarStore.getLongEventsForDay(calendarStore.selectedDate).length > 0">
+            <view class="all-day-label">全天/跨天</view>
+            <view class="all-day-list">
+              <view 
+                v-for="event in calendarStore.getLongEventsForDay(calendarStore.selectedDate)" 
+                :key="event._id"
+                class="long-event-item"
+                :style="{ backgroundColor: event.color + '20', borderLeft: '8rpx solid ' + event.color }"
+                @click.stop="handleViewEvent(event)" 
+              >
+                <text class="long-event-title">{{ event.title }}</text>
+                <text class="long-event-time">{{ event.startDate }} 至 {{ event.endDate }}</text>
+              </view>
+            </view>
+          </view>
           <view 
             v-for="time in timeSlots" 
             :key="time"
@@ -196,7 +201,13 @@
                   @click.stop="handleViewEvent(event)"
                 >
                   <text class="event-title">{{ event.title }}</text>
-                  <text class="event-time">{{ event.startTime }} - {{ event.endTime }}</text>
+                  <view class="event-time-and-reminder">
+                    <text class="event-time">{{ event.startTime }} - {{ event.endTime }}</text>
+                    <!-- 添加提醒图标 -->
+                    <view v-if="event.reminders && event.reminders.length > 0" class="day-reminder-icon">
+                      🔔
+                    </view>
+                  </view>
                 </view>
               </view>
             </view>
@@ -284,6 +295,50 @@
             </view>
           </view>
           
+          <!-- 提醒选项 -->
+          <view class="form-item">
+            <text class="form-label">提醒时间</text>
+            <view class="reminder-picker">
+              <view 
+                v-for="option in calendarStore.reminderOptions" 
+                :key="option.value"
+                class="reminder-option"
+                :class="{ selected: eventForm.reminders.includes(option.value) }"
+                @click="toggleReminder(option.value)"
+              >
+                <view class="reminder-checkbox">
+                  <text v-if="eventForm.reminders.includes(option.value)" class="reminder-check">✓</text>
+                </view>
+                <text class="reminder-label">{{ option.label }}</text>
+              </view>
+              <!-- 无提醒选项 -->
+              <view 
+                class="reminder-option"
+                :class="{ selected: eventForm.reminders.length === 0 }"
+                @click="clearReminders"
+              >
+                <view class="reminder-checkbox">
+                  <text v-if="eventForm.reminders.length === 0" class="reminder-check">✓</text>
+                </view>
+                <text class="reminder-label">无提醒</text>
+              </view>
+            </view>
+          </view>
+          
+          <!-- 显示已设置的提醒 -->
+          <view v-if="eventForm.reminders.length > 0" class="form-item reminders-display">
+            <text class="form-label">已设置提醒:</text>
+            <view class="reminders-list">
+              <view 
+                v-for="(reminder, index) in sortedReminders" 
+                :key="index"
+                class="reminder-badge"
+              >
+                <text class="reminder-text">{{ getReminderLabel(reminder) }}</text>
+              </view>
+            </view>
+          </view>
+          
           <view class="form-item">
             <text class="form-label">备注</text>
             <textarea 
@@ -312,10 +367,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch, nextTick } from 'vue'
+import { ref, reactive, onMounted, watch, nextTick, computed } from 'vue'
 import moment from 'moment'
 import { useCalendarStore } from '@/stores/calendar.js'
 import type { CalendarEvent, EventForm } from '@/types'
+import reminderService from '@/utils/reminder.js'
 
 const calendarStore = useCalendarStore()
 
@@ -328,6 +384,7 @@ const autoFocusTitle = ref(false)
 const timeColumnRef = ref<HTMLElement | null>(null)
 const daysContentRef = ref<HTMLElement | null>(null)
 
+// 事件表单数据
 const eventForm = reactive<EventForm>({
   title: '',
   startDate: moment().format('YYYY-MM-DD'),
@@ -336,7 +393,8 @@ const eventForm = reactive<EventForm>({
   endTime: '10:00',
   color: '#2979ff',
   notes: '',
-  isAllDay: false
+  isAllDay: false,
+  reminders: []
 })
 
 const weekdays = ['日', '一', '二', '三', '四', '五', '六']
@@ -344,18 +402,114 @@ const timeSlots = Array.from({ length: 24 }, (_, i) =>
   `${i.toString().padStart(2, '0')}:00`
 )
 
+// ==================== 计算属性 ====================
+
+// 预计算月视图每天的事件
+const monthDayEvents = computed(() => {
+  if (calendarStore.currentView !== 'month') return {}
+  
+  const eventsMap: Record<string, CalendarEvent[]> = {}
+  
+  calendarStore.monthDays.forEach(day => {
+    const dateStr = day.dateStr
+    if (dateStr) {
+      const dayEvents = calendarStore.getTimeEventsForDay(day.date).slice(0, 3)
+      eventsMap[dateStr] = dayEvents
+    }
+  })
+  
+  return eventsMap
+})
+
+// 排序后的提醒列表
+const sortedReminders = computed(() => {
+  return [...eventForm.reminders].sort((a, b) => a - b)
+})
+
+// ==================== 提醒相关方法 ====================
+
+// 切换提醒选项
+const toggleReminder = (value: number) => {
+  const index = eventForm.reminders.indexOf(value)
+  if (index === -1) {
+    // 添加提醒
+    eventForm.reminders.push(value)
+    // 按时间顺序排序
+    eventForm.reminders.sort((a, b) => a - b)
+  } else {
+    // 移除提醒
+    eventForm.reminders.splice(index, 1)
+  }
+}
+
+// 清除所有提醒
+const clearReminders = () => {
+  eventForm.reminders = []
+}
+
+// 获取提醒标签
+const getReminderLabel = (minutes: number): string => {
+  const option = calendarStore.reminderOptions.find(opt => opt.value === minutes)
+  return option ? option.label : `${minutes}分钟前`
+}
+
+// ==================== 视图切换方法 ====================
+
+const handleSwitchView = (view: string) => {
+  const oldView = calendarStore.currentView
+  calendarStore.switchView(view)
+  
+  if (oldView !== view) {
+    setTimeout(() => {
+      calendarStore.loadEventsSilently()
+    }, 300)
+  }
+}
+
+const handlePreviousPeriod = () => {
+  calendarStore.previousPeriod()
+  
+  setTimeout(() => {
+    calendarStore.loadEventsSilently()
+  }, 200)
+}
+
+const handleNextPeriod = () => {
+  calendarStore.nextPeriod()
+  
+  setTimeout(() => {
+    calendarStore.loadEventsSilently()
+  }, 200)
+}
+
+const handleGoToToday = () => {
+  calendarStore.goToToday()
+  
+  setTimeout(() => {
+    calendarStore.loadEventsSilently()
+  }, 200)
+}
+
+const handleSelectDate = (date: any) => {
+  calendarStore.selectDate(date)
+  
+  setTimeout(() => {
+    calendarStore.loadEventsSilently()
+  }, 200)
+}
+
+// ==================== 事件处理方法 ====================
+
 // 滚动同步方法
 const syncScroll = () => {
   const timeColumn = timeColumnRef.value
   const daysContent = daysContentRef.value
   
   if (timeColumn && daysContent) {
-    // 监听daysContent的滚动，同步到timeColumn
     daysContent.addEventListener('scroll', () => {
       timeColumn.scrollTop = daysContent.scrollTop
     })
     
-    // 监听timeColumn的滚动，同步到daysContent（理论上不应该滚动，但为了保险）
     timeColumn.addEventListener('scroll', () => {
       daysContent.scrollTop = timeColumn.scrollTop
     })
@@ -364,12 +518,12 @@ const syncScroll = () => {
 
 // 周视图方法
 const getLimitedEventsForTimeSlot = (date: any, time: string) => {
-  const events = calendarStore.getEventsForDayAndTime(date, time)
+  const events = calendarStore.getEventsForTimeSlot(date, time)
   return events.slice(0, 2)
 }
 
 const hasMoreEvents = (date: any, time: string) => {
-  const events = calendarStore.getEventsForDayAndTime(date, time)
+  const events = calendarStore.getEventsForTimeSlot(date, time)
   return events.length > 2
 }
 
@@ -381,7 +535,7 @@ const getShortTitle = (title: string) => {
 }
 
 const handleViewMoreEvents = (date: any, time: string) => {
-  const events = calendarStore.getEventsForDayAndTime(date, time)
+  const events = calendarStore.getEventsForTimeSlot(date, time)
   uni.showActionSheet({
     title: `${moment(date).format('MM月DD日')} ${time} 的事件`,
     itemList: events.map(event => event.title),
@@ -392,12 +546,13 @@ const handleViewMoreEvents = (date: any, time: string) => {
   })
 }
 
-// 日视图方法 - 简化版本
+// 日视图方法
 const getEventsForTimeSlot = (date: any, time: string) => {
   return calendarStore.getEventsForTimeSlot(date, time)
 }
 
-// 通用方法
+// ==================== 事件表单处理 ====================
+
 const handleDateChange = (field: 'startDate' | 'endDate', value: string) => {
   eventForm[field] = value
   if (field === 'startDate' && eventForm.startDate > eventForm.endDate) {
@@ -452,6 +607,8 @@ const handleViewEvent = (event: CalendarEvent) => {
   eventForm.endTime = event.endTime || '10:00'
   eventForm.color = event.color || '#2979ff'
   eventForm.notes = event.notes || ''
+  eventForm.reminders = event.reminders || []
+  
   showEventModal.value = true
   nextTick(() => {
     autoFocusTitle.value = true
@@ -466,6 +623,8 @@ const resetEventForm = () => {
   eventForm.endTime = '10:00'
   eventForm.color = '#2979ff'
   eventForm.notes = ''
+  eventForm.reminders = []
+  
   autoFocusTitle.value = false
 }
 
@@ -552,40 +711,56 @@ const closeEventModal = () => {
   editingEventId.value = null
 }
 
-watch([() => calendarStore.currentView, () => calendarStore.selectedDate], () => {
-  calendarStore.loadEvents()
-  // 视图切换时重新设置滚动同步
-  if (calendarStore.currentView === 'week') {
-    nextTick(() => {
-      setTimeout(syncScroll, 100)
-    })
-  }
-})
+// ==================== 生命周期 ====================
 
 onMounted(() => {
   console.log('🚀 日历应用启动')
-    
-    // 运行系统调试
-    setTimeout(() => {
-      calendarStore.debugSystem().then(() => {
-        console.log('🎯 系统调试完成，开始加载日程数据')
-        // 调试完成后加载日程
-        calendarStore.loadEvents()
-      }).catch(error => {
-        console.error('❌ 系统调试失败:', error)
-        // 即使调试失败也尝试加载日程
-        calendarStore.loadEvents()
-      })
-    }, 1000)
+  
+  // 测试提醒服务
+  console.log('🔔 提醒服务状态:', reminderService.initialized ? '已初始化' : '未初始化')
+  
+  // 初始加载数据
   calendarStore.loadEvents()
-  // 初始化时设置滚动同步
+  
+  // 延迟启动静默刷新
+  setTimeout(() => {
+    calendarStore.startSilentRefresh()
+  }, 3000)
+  
+  // 设置滚动同步
   nextTick(() => {
     setTimeout(syncScroll, 100)
   })
+  
+  // 监听应用状态变化
+  // #ifdef H5
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      console.log('📱 页面可见，静默刷新数据')
+      setTimeout(() => {
+        calendarStore.loadEventsSilently()
+      }, 1000)
+    }
+  })
+  // #endif
+  
+  // 检查通知点击记录
+  setTimeout(() => {
+    try {
+      const notification = uni.getStorageSync('lastClickedNotification')
+      if (notification) {
+        console.log('发现通知点击记录:', notification)
+        uni.removeStorageSync('lastClickedNotification')
+      }
+    } catch (error) {
+      console.error('检查通知记录失败:', error)
+    }
+  }, 1000)
 })
 </script>
 
 <style scoped>
+/* 日历容器样式 */
 .calendar-container {
   height: 100vh;
   display: flex;
@@ -628,70 +803,7 @@ onMounted(() => {
   gap: 15rpx;
 }
 
-/* 修改 .calendar-day 让它支持纵向排列数字和农历 */
-.calendar-day {
-  height: 120rpx;
-  display: flex;
-  flex-direction: column; /* 纵向排列 */
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  border-bottom: 1rpx solid #f2f2f2;
-}
-
-.day-content-wrapper {
-  width: 60rpx;
-  height: 60rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s;
-}
-
-.today .day-content-wrapper {
-  background-color: #2979ff; 
-}
-
-.today .day-number {
-  color: #ffffff;
-  font-weight: bold;
-}
-
-.selected:not(.today) .day-content-wrapper {
-  border: 2rpx solid #2979ff;
-}
-
-.day-number {
-  font-size: 28rpx;
-  font-weight: bold;
-}
-
-
-.lunar-day {
-  font-size: 20rpx;
-  color: #999;
-  margin-top: 4rpx;
-}
-
-/* 今天状态下的颜色 */
-.today .lunar-day {
-  color: #2979ff;
-}
-
-.event-dots {
-  display: flex;
-  justify-content: center;
-  gap: 4rpx;
-  margin-top: 6rpx;
-}
-
-.event-dot {
-  width: 8rpx;
-  height: 8rpx;
-  border-radius: 50%;
-}
-
+/* 视图切换器 */
 .view-switcher {
   display: flex;
   gap: 10rpx;
@@ -711,6 +823,7 @@ onMounted(() => {
   border-color: #2979ff;
 }
 
+/* 日期导航 */
 .date-navigation {
   display: flex;
   align-items: center;
@@ -751,6 +864,7 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 月视图 */
 .month-view {
   height: 100%;
   display: flex;
@@ -778,38 +892,68 @@ onMounted(() => {
   grid-auto-rows: 1fr;
 }
 
-.month-day {
-  border-right: 1rpx solid #e4e7ed;
-  border-bottom: 1rpx solid #e4e7ed;
-  padding: 10rpx;
+.calendar-day {
+  height: 120rpx;
   display: flex;
   flex-direction: column;
-  background-color: #fff;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-bottom: 1rpx solid #f2f2f2;
 }
 
-.month-day.other-month {
-  color: #c0c4cc;
-  background-color: #f8f9fa;
+.day-content-wrapper {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.today .day-content-wrapper {
+  background-color: #2979ff; 
+}
+
+.today .day-number {
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.selected:not(.today) .day-content-wrapper {
+  border: 2rpx solid #2979ff;
 }
 
 .day-number {
   font-size: 28rpx;
-  margin-bottom: 5rpx;
+  font-weight: bold;
 }
 
-.events-preview {
-  flex: 1;
+.lunar-day {
+  font-size: 20rpx;
+  color: #999;
+  margin-top: 4rpx;
+}
+
+.today .lunar-day {
+  color: #2979ff;
+}
+
+.event-dots {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   gap: 4rpx;
+  margin-top: 6rpx;
 }
 
-.event-preview {
+.event-dot {
+  width: 8rpx;
   height: 8rpx;
-  border-radius: 4rpx;
+  border-radius: 50%;
 }
 
-/* 周视图样式 - 优化对齐和滚动同步 */
+/* 周视图 */
 .week-view {
   height: 100%;
   display: flex;
@@ -882,7 +1026,6 @@ onMounted(() => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  /* 隐藏滚动条 */
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -913,7 +1056,6 @@ onMounted(() => {
   display: flex;
   overflow: auto;
   min-width: 0;
-  /* 确保可以滚动 */
   overflow-x: auto;
   overflow-y: auto;
 }
@@ -975,6 +1117,7 @@ onMounted(() => {
   box-shadow: 0 1rpx 2rpx rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   min-height: 0;
   max-height: 50%;
 }
@@ -990,11 +1133,16 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  width: 100%;
-  text-align: center;
+  flex: 1;
 }
 
-/* 日视图样式 */
+.reminder-icon {
+  font-size: 18rpx;
+  opacity: 0.9;
+  margin-left: 4rpx;
+}
+
+/* 日视图 */
 .day-view {
   height: 100%;
   background-color: #fff;
@@ -1074,12 +1222,6 @@ onMounted(() => {
   margin-top: 4rpx;
 }
 
-/* 调整下方滚动区域高度，确保布局不崩 */
-.day-scroll {
-  flex: 1;
-  height: 0; /* 配合 flex:1 填充剩余空间 */
-}
-
 .day-time-grid {
   flex: 1;
   overflow-y: auto;
@@ -1143,6 +1285,13 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.event-time-and-reminder {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4rpx;
+}
+
 .day-event .event-time {
   font-size: 20rpx;
   opacity: 0.9;
@@ -1150,6 +1299,11 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.day-reminder-icon {
+  font-size: 20rpx;
+  opacity: 0.9;
 }
 
 /* 模态框样式 */
@@ -1258,6 +1412,7 @@ input.form-input:focus {
   flex: 1;
 }
 
+/* 颜色选择器 */
 .color-picker {
   display: flex;
   flex-wrap: wrap;
@@ -1275,6 +1430,89 @@ input.form-input:focus {
   border-color: #2979ff;
 }
 
+/* 提醒选择器样式 */
+.reminder-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.reminder-option {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 20rpx;
+  border: 1rpx solid #dcdfe6;
+  border-radius: 8rpx;
+  background-color: #fff;
+  min-width: 140rpx;
+  transition: all 0.2s;
+}
+
+.reminder-option:hover {
+  border-color: #2979ff;
+  transform: translateY(-2rpx);
+}
+
+.reminder-option.selected {
+  border-color: #2979ff;
+  background-color: rgba(41, 121, 255, 0.1);
+}
+
+.reminder-checkbox {
+  width: 32rpx;
+  height: 32rpx;
+  border: 1rpx solid #dcdfe6;
+  border-radius: 4rpx;
+  margin-right: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reminder-option.selected .reminder-checkbox {
+  border-color: #2979ff;
+  background-color: #2979ff;
+}
+
+.reminder-check {
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: bold;
+}
+
+.reminder-label {
+  font-size: 24rpx;
+  color: #303133;
+}
+
+/* 已设置提醒显示 */
+.reminders-display {
+  background-color: #f8f9fa;
+  padding: 16rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid #e4e7ed;
+}
+
+.reminders-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 10rpx;
+}
+
+.reminder-badge {
+  background-color: #2979ff;
+  color: white;
+  padding: 6rpx 12rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+}
+
+.reminder-text {
+  font-weight: bold;
+}
+
+/* 按钮样式 */
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -1305,6 +1543,7 @@ input.form-input:focus {
   color: white;
 }
 
+/* 加载提示 */
 .loading-mask {
   position: fixed;
   top: 0;

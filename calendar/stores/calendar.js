@@ -11,43 +11,60 @@ export const useCalendarStore = defineStore('calendar', () => {
   const selectedDate = ref(moment())
   const events = ref([])
   const loading = ref(false)
-  const debugInfo = ref('') // 添加调试信息
+  const debugInfo = ref('')
+  
+  // 优化：添加缓存和状态管理
+  const isFetching = ref(false)
+  const lastMonthKey = ref('')
+  const cachedMonthData = ref(null)
+  const eventsCache = ref({}) // 按日期缓存事件
+  const lastFetchTime = ref(0)
   
   // 颜色选项
   const colorOptions = ref([
     '#2979ff', '#f56c6c', '#67c23a', '#e6a23c', 
     '#909399', '#ff85c0', '#5cdbd3', '#b37feb'
   ])
+  
+  // 提醒选项配置（简化版）
+  const reminderOptions = ref([
+    { label: '准时', value: 0 },
+    { label: '5分钟前', value: 5 },
+    { label: '10分钟前', value: 10 },
+    { label: '15分钟前', value: 15 },
+    { label: '30分钟前', value: 30 },
+    { label: '1小时前', value: 60 },
+    { label: '2小时前', value: 120 },
+    { label: '1天前', value: 1440 },
+    { label: '2天前', value: 2880 },
+    { label: '1周前', value: 10080 }
+  ])
 
-  // 环境配置
+  // ==================== 环境配置 ====================
   const getBaseURL = () => {
     // #ifdef H5
     if (process.env.NODE_ENV === 'development') {
-      return 'http://localhost:3000' // H5开发环境使用localhost
+      return 'http://localhost:3000'
     } else {
-      return window.location.origin // H5生产环境使用当前域名
+      return window.location.origin
     }
     // #endif
     // #ifdef MP-WEIXIN || APP-PLUS
-    return 'https://oozy-moaningly-macy.ngrok-free.dev' // 小程序使用ngrok
-	 // https://oozy-moaningly-macy.ngrok-free.dev
+    return 'https://oozy-moaningly-macy.ngrok-free.dev'
     // #endif
-    return 'https://oozy-moaningly-macy.ngrok-free.dev' // 默认使用ngrok
+    return 'https://oozy-moaningly-macy.ngrok-free.dev'
   }
 
-  // 检测是否为 ngrok 环境
   const isNgrokEnvironment = () => {
     const baseURL = getBaseURL()
     return baseURL.includes('ngrok-free.dev') || baseURL.includes('ngrok.io')
   }
 
-  // 获取动态请求头
   const getRequestHeaders = () => {
     const headers = {
       'Content-Type': 'application/json'
     }
     
-    // 只有在 ngrok 环境才添加跳过验证头部
     if (isNgrokEnvironment()) {
       headers['ngrok-skip-browser-warning'] = 'true'
       headers['X-Requested-With'] = 'XMLHttpRequest'
@@ -56,7 +73,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     return headers
   }
 
-  // 计算属性（保持不变）
+  // ==================== 计算属性优化 ====================
   const displayDate = computed(() => {
     switch (currentView.value) {
       case 'month':
@@ -72,7 +89,16 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   })
 
-const monthDays = computed(() => {
+  // 优化：如果 selectedDate 的月份没变，就不需要重新计算 monthDays
+  const monthDays = computed(() => {
+    const currentMonthKey = selectedDate.value.format('YYYY-MM')
+    
+    // 如果月份没变，返回缓存的月份数据
+    if (currentMonthKey === lastMonthKey.value && cachedMonthData.value) {
+      return cachedMonthData.value
+    }
+    
+    // 重新计算月份数据
     const startDay = selectedDate.value.clone().startOf('month').startOf('week')
     const endDay = selectedDate.value.clone().endOf('month').endOf('week')
     const days = []
@@ -89,13 +115,19 @@ const monthDays = computed(() => {
       days.push({
         date: day.clone(),
         day: day.date(),
-        lunarDay: festival || lunarText, // 农历或节日
+        lunarDay: festival || lunarText,
         isCurrentMonth: day.isSame(selectedDate.value, 'month'),
         isToday: day.isSame(moment(), 'day'),
-        isSelected: day.isSame(selectedDate.value, 'day')
+        isSelected: day.isSame(selectedDate.value, 'day'),
+        dateStr: day.format('YYYY-MM-DD')
       })
       day.add(1, 'day')
     }
+    
+    // 缓存计算结果
+    lastMonthKey.value = currentMonthKey
+    cachedMonthData.value = days
+    
     return days
   })
 
@@ -108,14 +140,70 @@ const monthDays = computed(() => {
       days.push({
         fullDate: day,
         weekday: ['日', '一', '二', '三', '四', '五', '六'][i],
-        date: day.date()
+        date: day.date(),
+        dateStr: day.format('YYYY-MM-DD')
       })
     }
     
     return days
   })
 
-  // 方法（保持不变）
+  // ==================== 事件数据缓存优化 ====================
+  // 构建事件缓存
+  const buildEventsCache = () => {
+    eventsCache.value = {}
+    
+    events.value.forEach(event => {
+      const startMoment = moment(event.startDate)
+      const endMoment = moment(event.endDate)
+      let current = startMoment.clone()
+      
+      while (current.isSameOrBefore(endMoment, 'day')) {
+        const dateStr = current.format('YYYY-MM-DD')
+        if (!eventsCache.value[dateStr]) {
+          eventsCache.value[dateStr] = []
+        }
+        eventsCache.value[dateStr].push(event)
+        current.add(1, 'day')
+      }
+    })
+  }
+
+  // 获取某天的事件（带缓存）
+  const getTimeEventsForDay = (date) => {
+    const dateStr = moment(date).format('YYYY-MM-DD')
+    return eventsCache.value[dateStr] || []
+  }
+
+  // 按时间槽获取事件
+  const getEventsForTimeSlot = (date, time) => {
+    const dateStr = moment(date).format('YYYY-MM-DD')
+    const eventsForDate = eventsCache.value[dateStr] || []
+    
+    return eventsForDate.filter(event => {
+      const isSingleDay = event.startDate === event.endDate
+      const isNotAllDay = !event.isAllDay
+      const timeMatch = time >= event.startTime && time < event.endTime
+      
+      return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch
+    })
+  }
+
+  // 长事件获取
+  const getLongEventsForDay = (date) => {
+    const dateStr = moment(date).format('YYYY-MM-DD')
+    const eventsForDate = eventsCache.value[dateStr] || []
+    
+    return eventsForDate.filter(event => {
+      const isMultiDay = event.startDate !== event.endDate
+      const isAllDay = event.isAllDay === true
+      const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate
+      
+      return (isMultiDay || isAllDay) && isWithinRange
+    })
+  }
+
+  // ==================== 视图切换方法 ====================
   const switchView = (view) => {
     currentView.value = view
   }
@@ -132,7 +220,6 @@ const monthDays = computed(() => {
         selectedDate.value = selectedDate.value.clone().subtract(1, 'day')
         break
     }
-    loadEvents()
   }
 
   const nextPeriod = () => {
@@ -147,85 +234,327 @@ const monthDays = computed(() => {
         selectedDate.value = selectedDate.value.clone().add(1, 'day')
         break
     }
-    loadEvents()
   }
 
   const goToToday = () => {
     selectedDate.value = moment()
-    loadEvents()
   }
 
   const selectDate = (date) => {
     selectedDate.value = date.clone()
-    // if (currentView.value === 'month') {
-    //   currentView.value = 'day'
-    // }
-    loadEvents()
   }
 
-  // 事件相关方法（保持不变）
-  const getTimeEventsForDay = (date) => {
-    const dateStr = date.format('YYYY-MM-DD')
-    return events.value.filter(event => 
-      event.startDate === dateStr || 
-      event.endDate === dateStr ||
-      (event.startDate <= dateStr && event.endDate >= dateStr)
-    )
+  // ==================== 静默数据加载 ====================
+  // 静默加载（不显示loading状态）
+  const loadEventsSilently = async () => {
+    if (isFetching.value) return
+    
+    // 防抖：避免频繁调用
+    const now = Date.now()
+    if (now - lastFetchTime.value < 2000) {
+      return
+    }
+    
+    try {
+      isFetching.value = true
+      lastFetchTime.value = now
+      
+      const baseURL = getBaseURL()
+      const url = baseURL + '/api/events?userId=default-user'
+      
+      const response = await new Promise((resolve, reject) => {
+        uni.request({
+          url,
+          method: 'GET',
+          timeout: 10000,
+          header: getRequestHeaders(),
+          success: (res) => resolve(res),
+          fail: (err) => reject(err)
+        })
+      })
+      
+      const { statusCode, responseData } = handleUniResponse(response)
+      
+      if (statusCode === 200) {
+        let newEvents = []
+        
+        // 解析事件数据
+        if (Array.isArray(responseData)) {
+          newEvents = responseData
+        } else if (responseData && Array.isArray(responseData.data)) {
+          newEvents = responseData.data
+        } else if (responseData && Array.isArray(responseData.events)) {
+          newEvents = responseData.events
+        }
+        
+        // 只有在数据变化时才更新
+        if (JSON.stringify(events.value) !== JSON.stringify(newEvents)) {
+          events.value = newEvents
+          buildEventsCache() // 更新缓存
+          console.log(`✅ 静默更新 ${newEvents.length} 个日程`)
+        }
+      }
+    } catch (error) {
+      console.error('静默加载失败:', error)
+    } finally {
+      isFetching.value = false
+    }
   }
 
-  const getEventsForDayAndTime = (date, time) => {
-    const dateStr = date.format('YYYY-MM-DD')
-    return events.value.filter(event => {
-      const dateMatch = event.startDate === dateStr || 
-                       event.endDate === dateStr ||
-                       (event.startDate <= dateStr && event.endDate >= dateStr)
+  // 主加载方法 - 显示加载状态
+  const loadEvents = async () => {
+    try {
+      loading.value = true
       
-      if (!dateMatch) return false
+      const baseURL = getBaseURL()
+      const url = baseURL + '/api/events?userId=default-user'
       
-      if (event.startTime && event.endTime) {
-        return time >= event.startTime && time < event.endTime
+      console.log('请求日程数据:', url)
+      console.log('请求头:', getRequestHeaders())
+      console.log('当前环境:', isNgrokEnvironment() ? 'Ngrok' : '本地')
+      
+      const response = await new Promise((resolve, reject) => {
+        uni.request({
+          url,
+          method: 'GET',
+          timeout: 30000,
+          header: getRequestHeaders(),
+          success: (res) => resolve(res),
+          fail: (err) => reject(err)
+        })
+      })
+      
+      // 检查响应内容类型
+      const contentType = response.header && response.header['Content-Type'];
+      if (contentType && contentType.includes('text/html')) {
+        throw new Error('服务器返回了HTML页面而不是JSON数据，请检查ngrok配置');
       }
       
-      return false
-    })
+      const { statusCode, responseData } = handleUniResponse(response)
+      
+      console.log('响应状态:', statusCode)
+      console.log('响应数据:', responseData)
+      
+      if (statusCode === 200) {
+        // 简化的数据解析
+        let newEvents = []
+        if (Array.isArray(responseData)) {
+          newEvents = responseData
+        } else if (responseData && Array.isArray(responseData.data)) {
+          newEvents = responseData.data
+        } else if (responseData && Array.isArray(responseData.events)) {
+          newEvents = responseData.events
+        } else {
+          console.warn('无法识别的数据格式')
+          newEvents = []
+        }
+        
+        events.value = newEvents
+        buildEventsCache() // 构建缓存
+        console.log(`成功加载 ${events.value.length} 个日程`)
+      } else {
+        throw new Error(`HTTP错误: ${statusCode}`)
+      }
+    } catch (error) {
+      console.error('加载事件失败:', error)
+      uni.showToast({
+        title: '加载失败: ' + error.message,
+        icon: 'none',
+        duration: 4000
+      })
+      events.value = []
+    } finally {
+      loading.value = false
+    }
   }
-  
-  /**
-   * 获取某天的“长日程”（全天或跨多天）
-   */
-  const getLongEventsForDay = (date) => {
-    const dateStr = date.format('YYYY-MM-DD');
-    return events.value.filter(event => {
-      const isMultiDay = event.startDate !== event.endDate; // 跨天
-      const isAllDay = event.isAllDay === true; // 全天标记
-      const isWithinRange = dateStr >= event.startDate && dateStr <= event.endDate; // 覆盖当天
-      
-      return (isMultiDay || isAllDay) && isWithinRange;
-    });
-  };
-  
-  /**
-   * 获取某天的“短日程”（非全天且不跨天，按小时排列）
-   * 修改你原有的 getEventsForTimeSlot，排除掉跨天日程
-   */
-  const getEventsForTimeSlot = (date, time) => {
-    const dateStr = date.format('YYYY-MM-DD');
-    return events.value.filter(event => {
-      // 关键：排除跨天日程
-      const isSingleDay = event.startDate === event.endDate; // 开始和结束是同一天
-      const isNotAllDay = !event.isAllDay; // 非全天
-      
-      // 匹配具体的小时格
-      const timeMatch = time >= event.startTime && time < event.endTime;
-      
-      // 必须同时满足：单天、非全天、日期匹配、时间匹配
-      return isSingleDay && isNotAllDay && event.startDate === dateStr && timeMatch;
-    });
-  };
-  
-  
 
-  // 统一处理 uni.request 响应
+  // 启动静默刷新
+  const startSilentRefresh = () => {
+    console.log('⏰ 启动静默刷新')
+    
+    // 每5分钟静默刷新一次
+    setInterval(() => {
+      if (!loading.value) {
+        loadEventsSilently()
+      }
+    }, 5 * 60 * 1000)
+    
+    // 监听应用状态变化
+    // #ifdef H5
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        console.log('📱 应用回到前台，静默刷新数据')
+        setTimeout(() => {
+          loadEventsSilently()
+        }, 1000)
+      }
+    })
+    // #endif
+  }
+
+  // ==================== 事件增删改（支持提醒） ====================
+  const createEvent = async (eventData) => {
+    try {
+      const baseURL = getBaseURL()
+      const url = baseURL + '/api/events'
+      
+      const response = await new Promise((resolve, reject) => {
+        uni.request({
+          url,
+          method: 'POST',
+          data: {
+            ...eventData,
+            userId: 'default-user'
+          },
+          header: getRequestHeaders(),
+          timeout: 10000,
+          success: (res) => resolve(res),
+          fail: (err) => reject(err)
+        })
+      })
+      
+      const { statusCode, responseData } = handleUniResponse(response)
+      
+      if (statusCode === 200 || statusCode === 201) {
+        if (!responseData) {
+          throw new Error('创建日程失败: 响应数据为空')
+        }
+
+        const result = responseData.data || responseData
+        
+        // 1. 静默加载最新数据
+        setTimeout(() => {
+          loadEventsSilently()
+        }, 500)
+        
+        // 2. 设置多个提醒
+        if (eventData.reminders && eventData.reminders.length > 0) {
+          console.log(`📅 为日程 "${result.title}" 设置 ${eventData.reminders.length} 个提醒`)
+          
+          // 为每个提醒时间设置通知
+          for (const reminderMinutes of eventData.reminders) {
+            const reminderResult = {
+              ...result,
+              reminderMinutes: reminderMinutes
+            }
+            
+            await reminderService.createLocalNotification(reminderResult)
+          }
+        } else {
+          console.log('⏰ 未设置提醒')
+        }
+        
+        return result
+      } else {
+        throw new Error(`HTTP错误: ${statusCode}`)
+      }
+    } catch (error) {
+      console.error('创建事件失败:', error)
+      throw error
+    }
+  }
+
+  const updateEvent = async (eventId, eventData) => {
+    try {
+      const baseURL = getBaseURL()
+      const url = baseURL + `/api/events/${eventId}`
+      
+      const response = await new Promise((resolve, reject) => {
+        uni.request({
+          url,
+          method: 'PUT',
+          data: eventData,
+          header: getRequestHeaders(),
+          timeout: 10000,
+          success: (res) => resolve(res),
+          fail: (err) => reject(err)
+        })
+      })
+      
+      const { statusCode, responseData } = handleUniResponse(response)
+      
+      // 先取消所有旧的提醒
+      reminderService.cancelNotification(eventId)
+      
+      // 设置新的提醒
+      if (eventData.reminders && eventData.reminders.length > 0) {
+        console.log(`📅 更新日程提醒，设置 ${eventData.reminders.length} 个提醒`)
+        
+        const updatedEvent = { ...eventData, _id: eventId }
+        
+        // 为每个提醒时间设置通知
+        for (const reminderMinutes of eventData.reminders) {
+          const reminderEvent = {
+            ...updatedEvent,
+            reminderMinutes: reminderMinutes
+          }
+          
+          await reminderService.createLocalNotification(reminderEvent)
+        }
+      }
+      
+      // 静默刷新数据
+      setTimeout(() => {
+        loadEventsSilently()
+      }, 500)
+      
+      if (statusCode === 200) {
+        if (responseData) {
+          return responseData.data || responseData
+        } else {
+          throw new Error('更新日程失败: 响应数据为空')
+        }
+      } else {
+        throw new Error(`HTTP错误: ${statusCode}`)
+      }
+    } catch (error) {
+      console.error('更新事件失败:', error)
+      throw error
+    }
+  }
+
+  const deleteEvent = async (eventId) => {
+    try {
+      const baseURL = getBaseURL()
+      const url = baseURL + `/api/events/${eventId}`
+      
+      const response = await new Promise((resolve, reject) => {
+        uni.request({
+          url,
+          method: 'DELETE',
+          header: getRequestHeaders(),
+          timeout: 10000,
+          success: (res) => resolve(res),
+          fail: (err) => reject(err)
+        })
+      })
+      
+      const { statusCode, responseData } = handleUniResponse(response)
+      
+      // 取消该事件的所有提醒
+      reminderService.cancelNotification(eventId)
+      
+      // 静默刷新数据
+      setTimeout(() => {
+        loadEventsSilently()
+      }, 500)
+      
+      if (statusCode === 200) {
+        if (responseData) {
+          return responseData.data || responseData
+        } else {
+          throw new Error('删除日程失败: 响应数据为空')
+        }
+      } else {
+        throw new Error(`HTTP错误: ${statusCode}`)
+      }
+    } catch (error) {
+      console.error('删除事件失败:', error)
+      throw error
+    }
+  }
+
+  // ==================== 工具方法 ====================
   const handleUniResponse = (response) => {
     let statusCode, responseData
     
@@ -250,9 +579,7 @@ const monthDays = computed(() => {
     return { statusCode, responseData }
   }
 
-  // ==================== 调试方法 ====================
-  
-  // 完整的系统调试
+  // 调试方法
   const debugSystem = async () => {
     const debugLog = []
     const baseURL = getBaseURL()
@@ -288,20 +615,12 @@ const monthDays = computed(() => {
       debugLog.push(`📦 原始数据格式: ${typeof eventsResult.responseData}`)
       debugLog.push(`🔢 解析后事件数量: ${eventsResult.parsedData.length}`)
       
-      // 4. 测试数据格式
-      debugLog.push('\n🔍 测试4: 数据格式分析')
-      if (eventsResult.responseData) {
-        debugLog.push(`📊 响应数据Keys: ${Object.keys(eventsResult.responseData).join(', ')}`)
-        if (Array.isArray(eventsResult.responseData)) {
-          debugLog.push('✅ 数据格式: 直接数组')
-        } else if (eventsResult.responseData.data) {
-          debugLog.push('✅ 数据格式: 包含data字段的对象')
-        } else if (eventsResult.responseData.events) {
-          debugLog.push('✅ 数据格式: 包含events字段的对象')
-        } else {
-          debugLog.push('❓ 数据格式: 未知格式')
-        }
-      }
+      // 4. 提醒服务状态
+      debugLog.push('\n🔔 测试4: 提醒服务状态')
+      const reminders = reminderService.getAllScheduledNotifications()
+      debugLog.push(`📊 提醒总数: ${reminders.total}`)
+      debugLog.push(`⏳ 即将触发: ${reminders.upcoming.length}`)
+      debugLog.push(`✅ 已触发: ${reminders.past.length}`)
       
       debugLog.push('\n🎯 ===== 调试完成 =====')
       
@@ -316,7 +635,27 @@ const monthDays = computed(() => {
     return debugLog
   }
 
-  // 健康检查测试
+  // 调试提醒
+  const debugReminders = () => {
+    console.log('🔔 当前所有提醒:')
+    const reminders = reminderService.getAllScheduledNotifications()
+    console.log(`总计: ${reminders.total} 个提醒`)
+    
+    if (reminders.upcoming.length > 0) {
+      console.log('⏳ 即将触发的提醒:')
+      reminders.upcoming.forEach(reminder => {
+        console.log(`  📅 ${reminder.title} - ${reminder.reminderText} (${reminder.minutesLeft}分钟后)`)
+      })
+    }
+    
+    if (reminders.past.length > 0) {
+      console.log('✅ 已触发的提醒:')
+      reminders.past.forEach(reminder => {
+        console.log(`  📅 ${reminder.title} - ${reminder.reminderText}`)
+      })
+    }
+  }
+
   const testHealth = async () => {
     try {
       const baseURL = getBaseURL()
@@ -327,7 +666,7 @@ const monthDays = computed(() => {
           url,
           method: 'GET',
           timeout: 10000,
-          header: getRequestHeaders(), // 使用动态头部
+          header: getRequestHeaders(),
           success: (res) => resolve(res),
           fail: (err) => reject(err)
         })
@@ -348,7 +687,6 @@ const monthDays = computed(() => {
     }
   }
 
-  // 网络连接测试
   const testNetwork = async () => {
     return new Promise((resolve) => {
       uni.getNetworkType({
@@ -368,7 +706,6 @@ const monthDays = computed(() => {
     })
   }
 
-  // 事件API测试
   const testEventsAPI = async () => {
     try {
       const baseURL = getBaseURL()
@@ -379,7 +716,7 @@ const monthDays = computed(() => {
           url,
           method: 'GET',
           timeout: 15000,
-          header: getRequestHeaders(), // 使用动态头部
+          header: getRequestHeaders(),
           success: (res) => resolve(res),
           fail: (err) => reject(err)
         })
@@ -410,196 +747,6 @@ const monthDays = computed(() => {
     }
   }
 
-  // ==================== 主要API方法 ====================
-
-  const loadEvents = async () => {
-    try {
-      loading.value = true
-      
-      const baseURL = getBaseURL()
-      const url = baseURL + '/api/events?userId=default-user'
-      
-      console.log('请求日程数据:', url)
-      console.log('请求头:', getRequestHeaders())
-      console.log('当前环境:', isNgrokEnvironment() ? 'Ngrok' : '本地')
-      
-      const response = await new Promise((resolve, reject) => {
-        uni.request({
-          url,
-          method: 'GET',
-          timeout: 30000,
-          header: getRequestHeaders(), // 使用动态头部
-          success: (res) => resolve(res),
-          fail: (err) => reject(err)
-        })
-      })
-      
-      // 检查响应内容类型
-      const contentType = response.header && response.header['Content-Type'];
-      if (contentType && contentType.includes('text/html')) {
-        throw new Error('服务器返回了HTML页面而不是JSON数据，请检查ngrok配置');
-      }
-      
-      const { statusCode, responseData } = handleUniResponse(response)
-      
-      console.log('响应状态:', statusCode)
-      console.log('响应数据:', responseData)
-      
-      if (statusCode === 200) {
-        // 简化的数据解析
-        if (Array.isArray(responseData)) {
-          events.value = responseData
-        } else if (responseData && Array.isArray(responseData.data)) {
-          events.value = responseData.data
-        } else if (responseData && Array.isArray(responseData.events)) {
-          events.value = responseData.events
-        } else {
-          console.warn('无法识别的数据格式')
-          events.value = []
-        }
-        
-        console.log(`成功加载 ${events.value.length} 个日程`)
-      } else {
-        throw new Error(`HTTP错误: ${statusCode}`)
-      }
-    } catch (error) {
-      console.error('加载事件失败:', error)
-      uni.showToast({
-        title: '加载失败: ' + error.message,
-        icon: 'none',
-        duration: 4000
-      })
-      events.value = []
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const createEvent = async (eventData) => {
-      try {
-        const baseURL = getBaseURL()
-        const url = baseURL + '/api/events'
-        
-        const response = await new Promise((resolve, reject) => {
-          uni.request({
-            url,
-            method: 'POST',
-            data: {
-              ...eventData,
-              userId: 'default-user'
-            },
-            header: getRequestHeaders(), // 使用动态头部
-            timeout: 10000,
-            success: (res) => resolve(res),
-            fail: (err) => reject(err)
-          })
-        })
-        
-        const { statusCode, responseData } = handleUniResponse(response)
-        
-        // 检查状态码是否表示成功
-        if (statusCode === 200 || statusCode === 201) {
-          if (!responseData) {
-            throw new Error('创建日程失败: 响应数据为空')
-          }
-  
-          // 核心修复：正确提取后端返回的数据字段（应为 data 而非 Date）
-          const result = responseData.data || responseData
-          
-          // 1. 先异步加载/刷新日程列表，确保 UI 同步
-          await loadEvents()
-          
-          // 2. 核心修复：非阻塞方式调用提醒服务（移除 await）
-          // 这样可以防止 App 端因权限申请弹窗阻塞导致创建弹窗不消失
-          reminderService.createLocalNotification(result).catch(e => {
-            console.error('提醒设置失败，但不影响 UI:', e)
-          })
-          
-          // 3. 正常返回结果给调用者（index.vue），触发 closeEventModal()
-          return result
-        } else {
-          throw new Error(`HTTP错误: ${statusCode}`)
-        }
-      } catch (error) {
-        console.error('创建事件失败:', error)
-        throw error
-      }
-    }
-  const updateEvent = async (eventId, eventData) => {
-    try {
-      const baseURL = getBaseURL()
-      const url = baseURL + `/api/events/${eventId}`
-      
-      const response = await new Promise((resolve, reject) => {
-        uni.request({
-          url,
-          method: 'PUT',
-          data: eventData,
-          header: getRequestHeaders(), // 使用动态头部
-          timeout: 10000,
-          success: (res) => resolve(res),
-          fail: (err) => reject(err)
-        })
-      })
-      
-      const { statusCode, responseData } = handleUniResponse(response)
-	  
-	  reminderService.cancelNotification(eventId)
-	  await reminderService.createLocalNotification({ ...eventData, _id: eventId })
-	  
-	  await loadEvents()
-      
-      if (statusCode === 200) {
-        if (responseData) {
-          await loadEvents()
-          return responseData.data || responseData
-        } else {
-          throw new Error('更新日程失败: 响应数据为空')
-        }
-      } else {
-        throw new Error(`HTTP错误: ${statusCode}`)
-      }
-    } catch (error) {
-      console.error('更新事件失败:', error)
-      throw error
-    }
-  }
-
-  const deleteEvent = async (eventId) => {
-    try {
-      const baseURL = getBaseURL()
-      const url = baseURL + `/api/events/${eventId}`
-      
-      const response = await new Promise((resolve, reject) => {
-        uni.request({
-          url,
-          method: 'DELETE',
-          header: getRequestHeaders(), // 使用动态头部
-          timeout: 10000,
-          success: (res) => resolve(res),
-          fail: (err) => reject(err)
-        })
-      })
-      
-      const { statusCode, responseData } = handleUniResponse(response)
-	  
-	  reminderService.cancelNotification(eventId)
-      
-      if (statusCode === 200) {
-        if (responseData) {
-          await loadEvents()
-        } else {
-          throw new Error('删除日程失败: 响应数据为空')
-        }
-      } else {
-        throw new Error(`HTTP错误: ${statusCode}`)
-      }
-    } catch (error) {
-      console.error('删除事件失败:', error)
-      throw error
-    }
-  }
-
   return {
     // 状态
     pageTitle,
@@ -608,6 +755,7 @@ const monthDays = computed(() => {
     events,
     loading,
     colorOptions,
+    reminderOptions,
     debugInfo,
     
     // 计算属性
@@ -622,16 +770,20 @@ const monthDays = computed(() => {
     goToToday,
     selectDate,
     getTimeEventsForDay,
-    getEventsForDayAndTime,
-	getLongEventsForDay,
-	getEventsForTimeSlot,
+    getEventsForTimeSlot,
+    getLongEventsForDay,
     loadEvents,
     createEvent,
     updateEvent,
     deleteEvent,
     
+    // 新增的优化方法
+    loadEventsSilently,
+    startSilentRefresh,
+    
     // 调试方法
     debugSystem,
+    debugReminders,
     testHealth,
     testNetwork,
     testEventsAPI,

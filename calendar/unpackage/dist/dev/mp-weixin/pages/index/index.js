@@ -1,6 +1,7 @@
 "use strict";
 const common_vendor = require("../../common/vendor.js");
 const stores_calendar = require("../../stores/calendar.js");
+const utils_reminder = require("../../utils/reminder.js");
 const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
   __name: "index",
   setup(__props) {
@@ -19,13 +20,79 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       endTime: "10:00",
       color: "#2979ff",
       notes: "",
-      isAllDay: false
+      isAllDay: false,
+      reminders: []
     });
     const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
     const timeSlots = Array.from(
       { length: 24 },
       (_, i) => `${i.toString().padStart(2, "0")}:00`
     );
+    const monthDayEvents = common_vendor.computed(() => {
+      if (calendarStore.currentView !== "month")
+        return {};
+      const eventsMap = {};
+      calendarStore.monthDays.forEach((day) => {
+        const dateStr = day.dateStr;
+        if (dateStr) {
+          const dayEvents = calendarStore.getTimeEventsForDay(day.date).slice(0, 3);
+          eventsMap[dateStr] = dayEvents;
+        }
+      });
+      return eventsMap;
+    });
+    const sortedReminders = common_vendor.computed(() => {
+      return [...eventForm.reminders].sort((a, b) => a - b);
+    });
+    const toggleReminder = (value) => {
+      const index = eventForm.reminders.indexOf(value);
+      if (index === -1) {
+        eventForm.reminders.push(value);
+        eventForm.reminders.sort((a, b) => a - b);
+      } else {
+        eventForm.reminders.splice(index, 1);
+      }
+    };
+    const clearReminders = () => {
+      eventForm.reminders = [];
+    };
+    const getReminderLabel = (minutes) => {
+      const option = calendarStore.reminderOptions.find((opt) => opt.value === minutes);
+      return option ? option.label : `${minutes}分钟前`;
+    };
+    const handleSwitchView = (view) => {
+      const oldView = calendarStore.currentView;
+      calendarStore.switchView(view);
+      if (oldView !== view) {
+        setTimeout(() => {
+          calendarStore.loadEventsSilently();
+        }, 300);
+      }
+    };
+    const handlePreviousPeriod = () => {
+      calendarStore.previousPeriod();
+      setTimeout(() => {
+        calendarStore.loadEventsSilently();
+      }, 200);
+    };
+    const handleNextPeriod = () => {
+      calendarStore.nextPeriod();
+      setTimeout(() => {
+        calendarStore.loadEventsSilently();
+      }, 200);
+    };
+    const handleGoToToday = () => {
+      calendarStore.goToToday();
+      setTimeout(() => {
+        calendarStore.loadEventsSilently();
+      }, 200);
+    };
+    const handleSelectDate = (date) => {
+      calendarStore.selectDate(date);
+      setTimeout(() => {
+        calendarStore.loadEventsSilently();
+      }, 200);
+    };
     const syncScroll = () => {
       const timeColumn = timeColumnRef.value;
       const daysContent = daysContentRef.value;
@@ -39,11 +106,11 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       }
     };
     const getLimitedEventsForTimeSlot = (date, time) => {
-      const events = calendarStore.getEventsForDayAndTime(date, time);
+      const events = calendarStore.getEventsForTimeSlot(date, time);
       return events.slice(0, 2);
     };
     const hasMoreEvents = (date, time) => {
-      const events = calendarStore.getEventsForDayAndTime(date, time);
+      const events = calendarStore.getEventsForTimeSlot(date, time);
       return events.length > 2;
     };
     const getShortTitle = (title) => {
@@ -53,7 +120,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       return title.substring(0, 6) + "...";
     };
     const handleViewMoreEvents = (date, time) => {
-      const events = calendarStore.getEventsForDayAndTime(date, time);
+      const events = calendarStore.getEventsForTimeSlot(date, time);
       common_vendor.index.showActionSheet({
         title: `${common_vendor.hooks(date).format("MM月DD日")} ${time} 的事件`,
         itemList: events.map((event) => event.title),
@@ -114,6 +181,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       eventForm.endTime = event.endTime || "10:00";
       eventForm.color = event.color || "#2979ff";
       eventForm.notes = event.notes || "";
+      eventForm.reminders = event.reminders || [];
       showEventModal.value = true;
       common_vendor.nextTick$1(() => {
         autoFocusTitle.value = true;
@@ -127,6 +195,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       eventForm.endTime = "10:00";
       eventForm.color = "#2979ff";
       eventForm.notes = "";
+      eventForm.reminders = [];
       autoFocusTitle.value = false;
     };
     const handleSaveEvent = async () => {
@@ -167,7 +236,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
         }
         closeEventModal();
       } catch (error) {
-        common_vendor.index.__f__("error", "at pages/index/index.vue:513", "保存日程失败:", error);
+        common_vendor.index.__f__("error", "at pages/index/index.vue:672", "保存日程失败:", error);
         common_vendor.index.showToast({
           title: error.message || "保存失败，请重试",
           icon: "none"
@@ -190,7 +259,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
               });
               closeEventModal();
             } catch (error) {
-              common_vendor.index.__f__("error", "at pages/index/index.vue:537", "删除日程失败:", error);
+              common_vendor.index.__f__("error", "at pages/index/index.vue:696", "删除日程失败:", error);
               common_vendor.index.showToast({
                 title: error.message || "删除失败，请重试",
                 icon: "none"
@@ -206,53 +275,42 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
       isEditing.value = false;
       editingEventId.value = null;
     };
-    common_vendor.watch([() => calendarStore.currentView, () => calendarStore.selectedDate], () => {
-      calendarStore.loadEvents();
-      if (calendarStore.currentView === "week") {
-        common_vendor.nextTick$1(() => {
-          setTimeout(syncScroll, 100);
-        });
-      }
-    });
     common_vendor.onMounted(() => {
-      common_vendor.index.__f__("log", "at pages/index/index.vue:566", "🚀 日历应用启动");
-      setTimeout(() => {
-        calendarStore.debugSystem().then(() => {
-          common_vendor.index.__f__("log", "at pages/index/index.vue:571", "🎯 系统调试完成，开始加载日程数据");
-          calendarStore.loadEvents();
-        }).catch((error) => {
-          common_vendor.index.__f__("error", "at pages/index/index.vue:575", "❌ 系统调试失败:", error);
-          calendarStore.loadEvents();
-        });
-      }, 1e3);
+      common_vendor.index.__f__("log", "at pages/index/index.vue:717", "🚀 日历应用启动");
+      common_vendor.index.__f__("log", "at pages/index/index.vue:720", "🔔 提醒服务状态:", utils_reminder.reminderService.initialized ? "已初始化" : "未初始化");
       calendarStore.loadEvents();
+      setTimeout(() => {
+        calendarStore.startSilentRefresh();
+      }, 3e3);
       common_vendor.nextTick$1(() => {
         setTimeout(syncScroll, 100);
       });
+      setTimeout(() => {
+        try {
+          const notification = common_vendor.index.getStorageSync("lastClickedNotification");
+          if (notification) {
+            common_vendor.index.__f__("log", "at pages/index/index.vue:752", "发现通知点击记录:", notification);
+            common_vendor.index.removeStorageSync("lastClickedNotification");
+          }
+        } catch (error) {
+          common_vendor.index.__f__("error", "at pages/index/index.vue:756", "检查通知记录失败:", error);
+        }
+      }, 1e3);
     });
     return (_ctx, _cache) => {
       return common_vendor.e({
         a: common_vendor.t(common_vendor.unref(calendarStore).pageTitle),
         b: common_vendor.o(handleAddEvent),
         c: common_vendor.unref(calendarStore).currentView === "month" ? 1 : "",
-        d: common_vendor.o(($event) => common_vendor.unref(calendarStore).switchView("month")),
+        d: common_vendor.o(($event) => handleSwitchView("month")),
         e: common_vendor.unref(calendarStore).currentView === "week" ? 1 : "",
-        f: common_vendor.o(($event) => common_vendor.unref(calendarStore).switchView("week")),
+        f: common_vendor.o(($event) => handleSwitchView("week")),
         g: common_vendor.unref(calendarStore).currentView === "day" ? 1 : "",
-        h: common_vendor.o(($event) => common_vendor.unref(calendarStore).switchView("day")),
-        i: common_vendor.o(
-          //@ts-ignore
-          (...args) => common_vendor.unref(calendarStore).previousPeriod && common_vendor.unref(calendarStore).previousPeriod(...args)
-        ),
+        h: common_vendor.o(($event) => handleSwitchView("day")),
+        i: common_vendor.o(handlePreviousPeriod),
         j: common_vendor.t(common_vendor.unref(calendarStore).displayDate),
-        k: common_vendor.o(
-          //@ts-ignore
-          (...args) => common_vendor.unref(calendarStore).nextPeriod && common_vendor.unref(calendarStore).nextPeriod(...args)
-        ),
-        l: common_vendor.o(
-          //@ts-ignore
-          (...args) => common_vendor.unref(calendarStore).goToToday && common_vendor.unref(calendarStore).goToToday(...args)
-        ),
+        k: common_vendor.o(handleNextPeriod),
+        l: common_vendor.o(handleGoToToday),
         m: common_vendor.unref(calendarStore).currentView === "month"
       }, common_vendor.unref(calendarStore).currentView === "month" ? {
         n: common_vendor.f(weekdays, (day, k0, i0) => {
@@ -265,7 +323,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
           return {
             a: common_vendor.t(day.day),
             b: common_vendor.t(day.lunarDay),
-            c: common_vendor.f(common_vendor.unref(calendarStore).getTimeEventsForDay(day.date).slice(0, 3), (event, k1, i1) => {
+            c: common_vendor.f(monthDayEvents.value[day.dateStr], (event, k1, i1) => {
               return {
                 a: event._id,
                 b: event.color
@@ -275,7 +333,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             e: !day.isCurrentMonth ? 1 : "",
             f: day.isToday ? 1 : "",
             g: day.isSelected ? 1 : "",
-            h: common_vendor.o(($event) => common_vendor.unref(calendarStore).selectDate(day.date), index)
+            h: common_vendor.o(($event) => handleSelectDate(day.date), index)
           };
         })
       } : {}, {
@@ -286,7 +344,7 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             a: common_vendor.t(day.weekday),
             b: common_vendor.t(day.date),
             c: day.fullDate.toString(),
-            d: common_vendor.o(($event) => common_vendor.unref(calendarStore).selectDate(day.fullDate), day.fullDate.toString())
+            d: common_vendor.o(($event) => handleSelectDate(day.fullDate), day.fullDate.toString())
           };
         }),
         r: common_vendor.f(common_vendor.unref(timeSlots), (time, k0, i0) => {
@@ -300,13 +358,15 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             a: common_vendor.f(common_vendor.unref(timeSlots), (time, k1, i1) => {
               return {
                 a: common_vendor.f(getLimitedEventsForTimeSlot(day.fullDate, time), (event, index, i2) => {
-                  return {
+                  return common_vendor.e({
                     a: common_vendor.t(index === 1 && hasMoreEvents(day.fullDate, time) ? "..." : getShortTitle(event.title)),
-                    b: event._id,
-                    c: event.color,
-                    d: index === 1 && hasMoreEvents(day.fullDate, time) ? 1 : "",
-                    e: common_vendor.o(($event) => index === 1 && hasMoreEvents(day.fullDate, time) ? handleViewMoreEvents(day.fullDate, time) : handleViewEvent(event), event._id)
-                  };
+                    b: event.reminders && event.reminders.length > 0
+                  }, event.reminders && event.reminders.length > 0 ? {} : {}, {
+                    c: event._id,
+                    d: event.color,
+                    e: index === 1 && hasMoreEvents(day.fullDate, time) ? 1 : "",
+                    f: common_vendor.o(($event) => index === 1 && hasMoreEvents(day.fullDate, time) ? handleViewMoreEvents(day.fullDate, time) : handleViewEvent(event), event._id)
+                  });
                 }),
                 b: time,
                 c: common_vendor.o(($event) => handleAddEventAtTime(day.fullDate, time), time)
@@ -338,14 +398,16 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
           return {
             a: common_vendor.t(time),
             b: common_vendor.f(getEventsForTimeSlot(common_vendor.unref(calendarStore).selectedDate, time), (event, k1, i1) => {
-              return {
+              return common_vendor.e({
                 a: common_vendor.t(event.title),
                 b: common_vendor.t(event.startTime),
                 c: common_vendor.t(event.endTime),
-                d: event._id,
-                e: event.color,
-                f: common_vendor.o(($event) => handleViewEvent(event), event._id)
-              };
+                d: event.reminders && event.reminders.length > 0
+              }, event.reminders && event.reminders.length > 0 ? {} : {}, {
+                e: event._id,
+                f: event.color,
+                g: common_vendor.o(($event) => handleViewEvent(event), event._id)
+              });
             }),
             c: common_vendor.o(($event) => handleAddEventAtTime(common_vendor.unref(calendarStore).selectedDate, time), time),
             d: time
@@ -379,16 +441,39 @@ const _sfc_main = /* @__PURE__ */ common_vendor.defineComponent({
             d: common_vendor.o(($event) => eventForm.color = color, color)
           };
         }),
-        T: eventForm.notes,
-        U: common_vendor.o(($event) => eventForm.notes = $event.detail.value),
-        V: common_vendor.o(closeEventModal),
-        W: isEditing.value
-      }, isEditing.value ? {
-        X: common_vendor.o(handleDeleteEvent)
+        T: common_vendor.f(common_vendor.unref(calendarStore).reminderOptions, (option, k0, i0) => {
+          return common_vendor.e({
+            a: eventForm.reminders.includes(option.value)
+          }, eventForm.reminders.includes(option.value) ? {} : {}, {
+            b: common_vendor.t(option.label),
+            c: option.value,
+            d: eventForm.reminders.includes(option.value) ? 1 : "",
+            e: common_vendor.o(($event) => toggleReminder(option.value), option.value)
+          });
+        }),
+        U: eventForm.reminders.length === 0
+      }, eventForm.reminders.length === 0 ? {} : {}, {
+        V: eventForm.reminders.length === 0 ? 1 : "",
+        W: common_vendor.o(clearReminders),
+        X: eventForm.reminders.length > 0
+      }, eventForm.reminders.length > 0 ? {
+        Y: common_vendor.f(sortedReminders.value, (reminder, index, i0) => {
+          return {
+            a: common_vendor.t(getReminderLabel(reminder)),
+            b: index
+          };
+        })
       } : {}, {
-        Y: common_vendor.o(handleSaveEvent)
+        Z: eventForm.notes,
+        aa: common_vendor.o(($event) => eventForm.notes = $event.detail.value),
+        ab: common_vendor.o(closeEventModal),
+        ac: isEditing.value
+      }, isEditing.value ? {
+        ad: common_vendor.o(handleDeleteEvent)
+      } : {}, {
+        ae: common_vendor.o(handleSaveEvent)
       }) : {}, {
-        Z: common_vendor.unref(calendarStore).loading
+        af: common_vendor.unref(calendarStore).loading
       }, common_vendor.unref(calendarStore).loading ? {} : {});
     };
   }

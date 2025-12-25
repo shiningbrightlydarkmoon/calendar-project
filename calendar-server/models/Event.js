@@ -42,6 +42,18 @@ const eventSchema = new mongoose.Schema({
     type: String,
     required: true,
     index: true
+  },
+  reminders: {
+    type: [Number], // 存储提醒时间数组（单位：分钟）
+    default: [],    // 默认空数组
+    validate: {
+      validator: function(array) {
+        // 验证数组元素都是非负数
+        return Array.isArray(array) && 
+               array.every(item => typeof item === 'number' && item >= 0);
+      },
+      message: '提醒时间必须是数字数组，且每个值不能为负数'
+    }
   }
 }, {
   timestamps: true

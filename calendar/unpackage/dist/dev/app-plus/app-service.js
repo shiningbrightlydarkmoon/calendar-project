@@ -18094,6 +18094,7 @@ This will fail in production.`);
       __expose();
       const calendarStore = useCalendarStore();
       const showEventModal = vue.ref(false);
+      const showDetailModal = vue.ref(false);
       const isEditing = vue.ref(false);
       const editingEventId = vue.ref(null);
       const autoFocusTitle = vue.ref(false);
@@ -18108,6 +18109,19 @@ This will fail in production.`);
         color: "#2979ff",
         notes: "",
         isAllDay: false,
+        reminders: []
+      });
+      const detailEvent = vue.ref({
+        _id: "",
+        title: "",
+        startDate: "",
+        endDate: "",
+        startTime: "",
+        endTime: "",
+        color: "#2979ff",
+        notes: "",
+        isAllDay: false,
+        userId: "",
         reminders: []
       });
       const weekdays = ["日", "一", "二", "三", "四", "五", "六"];
@@ -18146,6 +18160,65 @@ This will fail in production.`);
       const getReminderLabel = (minutes2) => {
         const option = calendarStore.reminderOptions.find((opt) => opt.value === minutes2);
         return option ? option.label : `${minutes2}分钟前`;
+      };
+      const handleViewEventDetail = async (event) => {
+        detailEvent.value = event;
+        showDetailModal.value = true;
+      };
+      const handleEditFromDetail = () => {
+        if (detailEvent.value) {
+          handleViewEvent(detailEvent.value);
+          closeDetailModal();
+        }
+      };
+      const handleDeleteFromDetail = async () => {
+        var _a;
+        if (!((_a = detailEvent.value) == null ? void 0 : _a._id))
+          return;
+        uni.showModal({
+          title: "确认删除",
+          content: `确定要删除日程 "${detailEvent.value.title}" 吗？`,
+          success: async (res) => {
+            if (res.confirm) {
+              try {
+                await calendarStore.deleteEvent(detailEvent.value._id);
+                uni.showToast({
+                  title: "日程已删除",
+                  icon: "success"
+                });
+                closeDetailModal();
+              } catch (error) {
+                formatAppLog("error", "at pages/index/index.vue:585", "删除日程失败:", error);
+                uni.showToast({
+                  title: error.message || "删除失败，请重试",
+                  icon: "none"
+                });
+              }
+            }
+          }
+        });
+      };
+      const closeDetailModal = () => {
+        showDetailModal.value = false;
+        detailEvent.value = {
+          _id: "",
+          title: "",
+          startDate: "",
+          endDate: "",
+          startTime: "",
+          endTime: "",
+          color: "#2979ff",
+          notes: "",
+          isAllDay: false,
+          userId: "",
+          reminders: []
+        };
+      };
+      const formatDate = (dateString) => {
+        return hooks(dateString).format("YYYY-MM-DD HH:mm");
+      };
+      const sortedEventReminders = (event) => {
+        return [...event.reminders || []].sort((a, b) => a - b);
       };
       const handleSwitchView = (view) => {
         const oldView = calendarStore.currentView;
@@ -18206,6 +18279,13 @@ This will fail in production.`);
         }
         return title.substring(0, 6) + "...";
       };
+      const handleWeekEventClick = (event, index, date, time) => {
+        if (index === 1 && hasMoreEvents(date, time)) {
+          handleViewMoreEvents(date, time);
+        } else {
+          handleViewEventDetail(event);
+        }
+      };
       const handleViewMoreEvents = (date, time) => {
         const events = calendarStore.getEventsForTimeSlot(date, time);
         uni.showActionSheet({
@@ -18213,9 +18293,12 @@ This will fail in production.`);
           itemList: events.map((event) => event.title),
           success: (res) => {
             const selectedEvent = events[res.tapIndex];
-            handleViewEvent(selectedEvent);
+            handleViewEventDetail(selectedEvent);
           }
         });
+      };
+      const handleDayEventClick = (event) => {
+        handleViewEventDetail(event);
       };
       const getEventsForTimeSlot = (date, time) => {
         return calendarStore.getEventsForTimeSlot(date, time);
@@ -18323,7 +18406,7 @@ This will fail in production.`);
           }
           closeEventModal();
         } catch (error) {
-          formatAppLog("error", "at pages/index/index.vue:672", "保存日程失败:", error);
+          formatAppLog("error", "at pages/index/index.vue:854", "保存日程失败:", error);
           uni.showToast({
             title: error.message || "保存失败，请重试",
             icon: "none"
@@ -18346,7 +18429,7 @@ This will fail in production.`);
                 });
                 closeEventModal();
               } catch (error) {
-                formatAppLog("error", "at pages/index/index.vue:696", "删除日程失败:", error);
+                formatAppLog("error", "at pages/index/index.vue:878", "删除日程失败:", error);
                 uni.showToast({
                   title: error.message || "删除失败，请重试",
                   icon: "none"
@@ -18363,8 +18446,8 @@ This will fail in production.`);
         editingEventId.value = null;
       };
       vue.onMounted(() => {
-        formatAppLog("log", "at pages/index/index.vue:717", "🚀 日历应用启动");
-        formatAppLog("log", "at pages/index/index.vue:720", "🔔 提醒服务状态:", reminderService.initialized ? "已初始化" : "未初始化");
+        formatAppLog("log", "at pages/index/index.vue:899", "🚀 日历应用启动");
+        formatAppLog("log", "at pages/index/index.vue:902", "🔔 提醒服务状态:", reminderService.initialized ? "已初始化" : "未初始化");
         calendarStore.loadEvents();
         setTimeout(() => {
           calendarStore.startSilentRefresh();
@@ -18376,15 +18459,15 @@ This will fail in production.`);
           try {
             const notification = uni.getStorageSync("lastClickedNotification");
             if (notification) {
-              formatAppLog("log", "at pages/index/index.vue:752", "发现通知点击记录:", notification);
+              formatAppLog("log", "at pages/index/index.vue:934", "发现通知点击记录:", notification);
               uni.removeStorageSync("lastClickedNotification");
             }
           } catch (error) {
-            formatAppLog("error", "at pages/index/index.vue:756", "检查通知记录失败:", error);
+            formatAppLog("error", "at pages/index/index.vue:938", "检查通知记录失败:", error);
           }
         }, 1e3);
       });
-      const __returned__ = { calendarStore, showEventModal, isEditing, editingEventId, autoFocusTitle, timeColumnRef, daysContentRef, eventForm, weekdays, timeSlots, monthDayEvents, sortedReminders, toggleReminder, clearReminders, getReminderLabel, handleSwitchView, handlePreviousPeriod, handleNextPeriod, handleGoToToday, handleSelectDate, syncScroll, getLimitedEventsForTimeSlot, hasMoreEvents, getShortTitle, handleViewMoreEvents, getEventsForTimeSlot, handleDateChange, handleTimeChange, handleAddEvent, handleAddEventAtTime, handleViewEvent, resetEventForm, handleSaveEvent, handleDeleteEvent, closeEventModal };
+      const __returned__ = { calendarStore, showEventModal, showDetailModal, isEditing, editingEventId, autoFocusTitle, timeColumnRef, daysContentRef, eventForm, detailEvent, weekdays, timeSlots, monthDayEvents, sortedReminders, toggleReminder, clearReminders, getReminderLabel, handleViewEventDetail, handleEditFromDetail, handleDeleteFromDetail, closeDetailModal, formatDate, sortedEventReminders, handleSwitchView, handlePreviousPeriod, handleNextPeriod, handleGoToToday, handleSelectDate, syncScroll, getLimitedEventsForTimeSlot, hasMoreEvents, getShortTitle, handleWeekEventClick, handleViewMoreEvents, handleDayEventClick, getEventsForTimeSlot, handleDateChange, handleTimeChange, handleAddEvent, handleAddEventAtTime, handleViewEvent, resetEventForm, handleSaveEvent, handleDeleteEvent, closeEventModal };
       Object.defineProperty(__returned__, "__isScriptSetup", { enumerable: false, value: true });
       return __returned__;
     }
@@ -18657,7 +18740,7 @@ This will fail in production.`);
                                         key: event._id,
                                         class: vue.normalizeClass(["week-event", { "more-events": index === 1 && $setup.hasMoreEvents(day.fullDate, time) }]),
                                         style: vue.normalizeStyle({ backgroundColor: event.color }),
-                                        onClick: vue.withModifiers(($event) => index === 1 && $setup.hasMoreEvents(day.fullDate, time) ? $setup.handleViewMoreEvents(day.fullDate, time) : $setup.handleViewEvent(event), ["stop"])
+                                        onClick: vue.withModifiers(($event) => $setup.handleWeekEventClick(event, index, day.fullDate, time), ["stop"])
                                       }, [
                                         vue.createElementVNode(
                                           "text",
@@ -18729,7 +18812,7 @@ This will fail in production.`);
                       key: event._id,
                       class: "long-event-item",
                       style: vue.normalizeStyle({ backgroundColor: event.color + "20", borderLeft: "8rpx solid " + event.color }),
-                      onClick: vue.withModifiers(($event) => $setup.handleViewEvent(event), ["stop"])
+                      onClick: vue.withModifiers(($event) => $setup.handleDayEventClick(event), ["stop"])
                     }, [
                       vue.createElementVNode(
                         "text",
@@ -18780,7 +18863,7 @@ This will fail in production.`);
                             key: event._id,
                             class: "day-event",
                             style: vue.normalizeStyle({ backgroundColor: event.color }),
-                            onClick: vue.withModifiers(($event) => $setup.handleViewEvent(event), ["stop"])
+                            onClick: vue.withModifiers(($event) => $setup.handleDayEventClick(event), ["stop"])
                           }, [
                             vue.createElementVNode(
                               "text",
@@ -19046,8 +19129,167 @@ This will fail in production.`);
           ])
         ])
       ])) : vue.createCommentVNode("v-if", true),
-      $setup.calendarStore.loading ? (vue.openBlock(), vue.createElementBlock("view", {
+      $setup.showDetailModal ? (vue.openBlock(), vue.createElementBlock("view", {
         key: 1,
+        class: "modal-mask detail-modal"
+      }, [
+        vue.createElementVNode("view", { class: "modal-content detail-content" }, [
+          vue.createElementVNode("view", { class: "detail-header" }, [
+            vue.createElementVNode(
+              "view",
+              {
+                class: "detail-color-indicator",
+                style: vue.normalizeStyle({ backgroundColor: $setup.detailEvent.color || "#2979ff" })
+              },
+              null,
+              4
+              /* STYLE */
+            ),
+            vue.createElementVNode("view", { class: "detail-title-section" }, [
+              vue.createElementVNode(
+                "text",
+                { class: "detail-title" },
+                vue.toDisplayString($setup.detailEvent.title),
+                1
+                /* TEXT */
+              ),
+              !$setup.detailEvent.isAllDay ? (vue.openBlock(), vue.createElementBlock("view", {
+                key: 0,
+                class: "detail-time-badge"
+              }, [
+                vue.createElementVNode(
+                  "text",
+                  { class: "badge-text" },
+                  vue.toDisplayString($setup.detailEvent.startTime) + " - " + vue.toDisplayString($setup.detailEvent.endTime),
+                  1
+                  /* TEXT */
+                )
+              ])) : (vue.openBlock(), vue.createElementBlock("view", {
+                key: 1,
+                class: "detail-time-badge"
+              }, [
+                vue.createElementVNode("text", { class: "badge-text" }, "全天")
+              ]))
+            ]),
+            vue.createElementVNode("button", {
+              class: "close-btn",
+              onClick: $setup.closeDetailModal
+            }, "×")
+          ]),
+          vue.createElementVNode("view", { class: "detail-body" }, [
+            vue.createElementVNode("view", { class: "detail-section" }, [
+              vue.createElementVNode("view", { class: "section-title" }, [
+                vue.createElementVNode("text", { class: "section-icon" }, "📅"),
+                vue.createElementVNode("text", { class: "section-label" }, "日期时间")
+              ]),
+              vue.createElementVNode("view", { class: "section-content" }, [
+                vue.createElementVNode(
+                  "text",
+                  { class: "date-text" },
+                  vue.toDisplayString($setup.detailEvent.startDate),
+                  1
+                  /* TEXT */
+                ),
+                $setup.detailEvent.startDate !== $setup.detailEvent.endDate ? (vue.openBlock(), vue.createElementBlock(
+                  "text",
+                  {
+                    key: 0,
+                    class: "date-text"
+                  },
+                  " 至 " + vue.toDisplayString($setup.detailEvent.endDate),
+                  1
+                  /* TEXT */
+                )) : vue.createCommentVNode("v-if", true)
+              ])
+            ]),
+            $setup.detailEvent.reminders && $setup.detailEvent.reminders.length > 0 ? (vue.openBlock(), vue.createElementBlock("view", {
+              key: 0,
+              class: "detail-section"
+            }, [
+              vue.createElementVNode("view", { class: "section-title" }, [
+                vue.createElementVNode("text", { class: "section-icon" }, "🔔"),
+                vue.createElementVNode("text", { class: "section-label" }, "提醒设置")
+              ]),
+              vue.createElementVNode("view", { class: "section-content reminders-content" }, [
+                vue.createElementVNode("view", { class: "reminder-tags" }, [
+                  (vue.openBlock(true), vue.createElementBlock(
+                    vue.Fragment,
+                    null,
+                    vue.renderList($setup.sortedEventReminders($setup.detailEvent), (reminder, index) => {
+                      return vue.openBlock(), vue.createElementBlock("view", {
+                        key: index,
+                        class: "reminder-tag"
+                      }, [
+                        vue.createElementVNode(
+                          "text",
+                          { class: "reminder-tag-text" },
+                          vue.toDisplayString($setup.getReminderLabel(reminder)),
+                          1
+                          /* TEXT */
+                        )
+                      ]);
+                    }),
+                    128
+                    /* KEYED_FRAGMENT */
+                  ))
+                ])
+              ])
+            ])) : vue.createCommentVNode("v-if", true),
+            $setup.detailEvent.notes ? (vue.openBlock(), vue.createElementBlock("view", {
+              key: 1,
+              class: "detail-section"
+            }, [
+              vue.createElementVNode("view", { class: "section-title" }, [
+                vue.createElementVNode("text", { class: "section-icon" }, "📝"),
+                vue.createElementVNode("text", { class: "section-label" }, "备注")
+              ]),
+              vue.createElementVNode("view", { class: "section-content notes-content" }, [
+                vue.createElementVNode(
+                  "text",
+                  { class: "notes-text" },
+                  vue.toDisplayString($setup.detailEvent.notes),
+                  1
+                  /* TEXT */
+                )
+              ])
+            ])) : vue.createCommentVNode("v-if", true),
+            $setup.detailEvent.createdAt ? (vue.openBlock(), vue.createElementBlock("view", {
+              key: 2,
+              class: "detail-section"
+            }, [
+              vue.createElementVNode("view", { class: "section-title" }, [
+                vue.createElementVNode("text", { class: "section-icon" }, "🕐"),
+                vue.createElementVNode("text", { class: "section-label" }, "创建时间")
+              ]),
+              vue.createElementVNode("view", { class: "section-content" }, [
+                vue.createElementVNode(
+                  "text",
+                  { class: "meta-text" },
+                  vue.toDisplayString($setup.formatDate($setup.detailEvent.createdAt)),
+                  1
+                  /* TEXT */
+                )
+              ])
+            ])) : vue.createCommentVNode("v-if", true)
+          ]),
+          vue.createElementVNode("view", { class: "detail-actions" }, [
+            vue.createElementVNode("button", {
+              class: "btn btn-secondary",
+              onClick: $setup.closeDetailModal
+            }, "取消"),
+            vue.createElementVNode("button", {
+              class: "btn btn-delete",
+              onClick: $setup.handleDeleteFromDetail
+            }, "删除"),
+            vue.createElementVNode("button", {
+              class: "btn btn-primary",
+              onClick: $setup.handleEditFromDetail
+            }, "编辑")
+          ])
+        ])
+      ])) : vue.createCommentVNode("v-if", true),
+      $setup.calendarStore.loading ? (vue.openBlock(), vue.createElementBlock("view", {
+        key: 2,
         class: "loading-mask"
       }, [
         vue.createElementVNode("view", { class: "loading-content" }, [

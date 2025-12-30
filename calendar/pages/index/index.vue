@@ -140,7 +140,7 @@
                         class="week-event"
                         :style="{ backgroundColor: event.color }"
                         :class="{ 'more-events': index === 1 && hasMoreEvents(day.fullDate, time) }"
-                        @click.stop="index === 1 && hasMoreEvents(day.fullDate, time) ? handleViewMoreEvents(day.fullDate, time) : handleViewEvent(event)"
+                        @click.stop="handleWeekEventClick(event, index, day.fullDate, time)"
                       >
                         <text class="event-title">
                           {{ index === 1 && hasMoreEvents(day.fullDate, time) ? '...' : getShortTitle(event.title) }}
@@ -175,7 +175,7 @@
                 :key="event._id"
                 class="long-event-item"
                 :style="{ backgroundColor: event.color + '20', borderLeft: '8rpx solid ' + event.color }"
-                @click.stop="handleViewEvent(event)" 
+                @click.stop="handleDayEventClick(event)" 
               >
                 <text class="long-event-title">{{ event.title }}</text>
                 <text class="long-event-time">{{ event.startDate }} 至 {{ event.endDate }}</text>
@@ -198,7 +198,7 @@
                   :key="event._id"
                   class="day-event"
                   :style="{ backgroundColor: event.color }"
-                  @click.stop="handleViewEvent(event)"
+                  @click.stop="handleDayEventClick(event)"
                 >
                   <text class="event-title">{{ event.title }}</text>
                   <view class="event-time-and-reminder">
@@ -357,6 +357,86 @@
       </view>
     </view>
 
+    <!-- 日程详情模态框 -->
+    <view v-if="showDetailModal" class="modal-mask detail-modal">
+      <view class="modal-content detail-content">
+        <view class="detail-header">
+          <view class="detail-color-indicator" :style="{ backgroundColor: detailEvent.color || '#2979ff' }"></view>
+          <view class="detail-title-section">
+            <text class="detail-title">{{ detailEvent.title }}</text>
+            <view class="detail-time-badge" v-if="!detailEvent.isAllDay">
+              <text class="badge-text">{{ detailEvent.startTime }} - {{ detailEvent.endTime }}</text>
+            </view>
+            <view class="detail-time-badge" v-else>
+              <text class="badge-text">全天</text>
+            </view>
+          </view>
+          <button class="close-btn" @click="closeDetailModal">×</button>
+        </view>
+        
+        <view class="detail-body">
+          <!-- 日期信息 -->
+          <view class="detail-section">
+            <view class="section-title">
+              <text class="section-icon">📅</text>
+              <text class="section-label">日期时间</text>
+            </view>
+            <view class="section-content">
+              <text class="date-text">{{ detailEvent.startDate }}</text>
+              <text v-if="detailEvent.startDate !== detailEvent.endDate" class="date-text"> 至 {{ detailEvent.endDate }}</text>
+            </view>
+          </view>
+          
+          <!-- 提醒信息 -->
+          <view v-if="detailEvent.reminders && detailEvent.reminders.length > 0" class="detail-section">
+            <view class="section-title">
+              <text class="section-icon">🔔</text>
+              <text class="section-label">提醒设置</text>
+            </view>
+            <view class="section-content reminders-content">
+              <view class="reminder-tags">
+                <view 
+                  v-for="(reminder, index) in sortedEventReminders(detailEvent)" 
+                  :key="index"
+                  class="reminder-tag"
+                >
+                  <text class="reminder-tag-text">{{ getReminderLabel(reminder) }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
+          
+          <!-- 备注信息 -->
+          <view v-if="detailEvent.notes" class="detail-section">
+            <view class="section-title">
+              <text class="section-icon">📝</text>
+              <text class="section-label">备注</text>
+            </view>
+            <view class="section-content notes-content">
+              <text class="notes-text">{{ detailEvent.notes }}</text>
+            </view>
+          </view>
+          
+          <!-- 创建时间 -->
+          <view v-if="detailEvent.createdAt" class="detail-section">
+            <view class="section-title">
+              <text class="section-icon">🕐</text>
+              <text class="section-label">创建时间</text>
+            </view>
+            <view class="section-content">
+              <text class="meta-text">{{ formatDate(detailEvent.createdAt) }}</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="detail-actions">
+          <button class="btn btn-secondary" @click="closeDetailModal">取消</button>
+          <button class="btn btn-delete" @click="handleDeleteFromDetail">删除</button>
+          <button class="btn btn-primary" @click="handleEditFromDetail">编辑</button>
+        </view>
+      </view>
+    </view>
+
     <!-- 加载提示 -->
     <view v-if="calendarStore.loading" class="loading-mask">
       <view class="loading-content">
@@ -376,6 +456,7 @@ import reminderService from '@/utils/reminder.js'
 const calendarStore = useCalendarStore()
 
 const showEventModal = ref(false)
+const showDetailModal = ref(false)
 const isEditing = ref(false)
 const editingEventId = ref<string | null>(null)
 const autoFocusTitle = ref(false)
@@ -394,6 +475,21 @@ const eventForm = reactive<EventForm>({
   color: '#2979ff',
   notes: '',
   isAllDay: false,
+  reminders: []
+})
+
+// 详情弹窗相关
+const detailEvent = ref<CalendarEvent>({
+  _id: '',
+  title: '',
+  startDate: '',
+  endDate: '',
+  startTime: '',
+  endTime: '',
+  color: '#2979ff',
+  notes: '',
+  isAllDay: false,
+  userId: '',
   reminders: []
 })
 
@@ -451,6 +547,78 @@ const clearReminders = () => {
 const getReminderLabel = (minutes: number): string => {
   const option = calendarStore.reminderOptions.find(opt => opt.value === minutes)
   return option ? option.label : `${minutes}分钟前`
+}
+
+// ==================== 详情弹窗相关方法 ====================
+
+// 查看日程详情
+const handleViewEventDetail = async (event: CalendarEvent) => {
+  detailEvent.value = event
+  showDetailModal.value = true
+}
+
+// 从详情弹窗进入编辑模式
+const handleEditFromDetail = () => {
+  if (detailEvent.value) {
+    handleViewEvent(detailEvent.value)
+    closeDetailModal()
+  }
+}
+
+// 从详情弹窗删除日程
+const handleDeleteFromDetail = async () => {
+  if (!detailEvent.value?._id) return
+  
+  uni.showModal({
+    title: '确认删除',
+    content: `确定要删除日程 "${detailEvent.value.title}" 吗？`,
+    success: async (res) => {
+      if (res.confirm) {
+        try {
+          await calendarStore.deleteEvent(detailEvent.value!._id!)
+          uni.showToast({
+            title: '日程已删除',
+            icon: 'success'
+          })
+          closeDetailModal()
+        } catch (error: any) {
+          console.error('删除日程失败:', error)
+          uni.showToast({
+            title: error.message || '删除失败，请重试',
+            icon: 'none'
+          })
+        }
+      }
+    }
+  })
+}
+
+// 关闭详情弹窗
+const closeDetailModal = () => {
+  showDetailModal.value = false
+  detailEvent.value = {
+    _id: '',
+    title: '',
+    startDate: '',
+    endDate: '',
+    startTime: '',
+    endTime: '',
+    color: '#2979ff',
+    notes: '',
+    isAllDay: false,
+    userId: '',
+    reminders: []
+  }
+}
+
+// 格式化日期
+const formatDate = (dateString: string) => {
+  return moment(dateString).format('YYYY-MM-DD HH:mm')
+}
+
+// 获取排序后的提醒
+const sortedEventReminders = (event: CalendarEvent) => {
+  return [...(event.reminders || [])].sort((a, b) => a - b)
 }
 
 // ==================== 视图切换方法 ====================
@@ -534,6 +702,15 @@ const getShortTitle = (title: string) => {
   return title.substring(0, 6) + '...'
 }
 
+// 周视图事件点击
+const handleWeekEventClick = (event: CalendarEvent, index: number, date: any, time: string) => {
+  if (index === 1 && hasMoreEvents(date, time)) {
+    handleViewMoreEvents(date, time)
+  } else {
+    handleViewEventDetail(event)
+  }
+}
+
 const handleViewMoreEvents = (date: any, time: string) => {
   const events = calendarStore.getEventsForTimeSlot(date, time)
   uni.showActionSheet({
@@ -541,9 +718,14 @@ const handleViewMoreEvents = (date: any, time: string) => {
     itemList: events.map(event => event.title),
     success: (res) => {
       const selectedEvent = events[res.tapIndex]
-      handleViewEvent(selectedEvent)
+      handleViewEventDetail(selectedEvent)
     }
   })
+}
+
+// 日视图事件点击
+const handleDayEventClick = (event: CalendarEvent) => {
+  handleViewEventDetail(event)
 }
 
 // 日视图方法
@@ -1539,6 +1721,167 @@ input.form-input:focus {
 }
 
 .btn-confirm {
+  background-color: #2979ff;
+  color: white;
+}
+
+/* 详情弹窗样式 */
+.detail-modal .modal-content {
+  width: 90%;
+  max-height: 80%;
+  background-color: #fff;
+  border-radius: 20rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  padding: 30rpx 30rpx 20rpx;
+  border-bottom: 1rpx solid #e4e7ed;
+}
+
+.detail-color-indicator {
+  width: 12rpx;
+  height: 60rpx;
+  border-radius: 6rpx;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+
+.detail-title-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-title {
+  font-size: 36rpx;
+  font-weight: bold;
+  color: #303133;
+  display: block;
+  margin-bottom: 12rpx;
+  line-height: 1.3;
+}
+
+.detail-time-badge {
+  background-color: #f0f9ff;
+  border: 1rpx solid #2979ff;
+  border-radius: 20rpx;
+  padding: 8rpx 16rpx;
+  display: inline-block;
+}
+
+.badge-text {
+  font-size: 24rpx;
+  color: #2979ff;
+  font-weight: 500;
+}
+
+.detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 30rpx;
+}
+
+.detail-section {
+  margin-bottom: 30rpx;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.section-icon {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+}
+
+.section-label {
+  font-size: 28rpx;
+  color: #606266;
+  font-weight: 500;
+}
+
+.section-content {
+  padding-left: 40rpx;
+}
+
+.date-text {
+  font-size: 28rpx;
+  color: #303133;
+  line-height: 1.4;
+}
+
+.reminders-content {
+  margin-top: 8rpx;
+}
+
+.reminder-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.reminder-tag {
+  background-color: #2979ff;
+  color: white;
+  padding: 8rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 24rpx;
+}
+
+.reminder-tag-text {
+  font-weight: 500;
+}
+
+.notes-content {
+  background-color: #f8f9fa;
+  padding: 20rpx;
+  border-radius: 8rpx;
+  border: 1rpx solid #e4e7ed;
+}
+
+.notes-text {
+  font-size: 28rpx;
+  color: #303133;
+  line-height: 1.5;
+}
+
+.meta-text {
+  font-size: 24rpx;
+  color: #909399;
+}
+
+.detail-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 20rpx;
+  padding: 30rpx;
+  border-top: 1rpx solid #e4e7ed;
+  flex-shrink: 0;
+}
+
+.detail-actions .btn {
+  padding: 20rpx 40rpx;
+  border-radius: 8rpx;
+  font-size: 28rpx;
+  border: none;
+}
+
+.detail-actions .btn-secondary {
+  background-color: #f4f4f5;
+  color: #606266;
+}
+
+.detail-actions .btn-delete {
+  background-color: #f56c6c;
+  color: white;
+}
+
+.detail-actions .btn-primary {
   background-color: #2979ff;
   color: white;
 }
